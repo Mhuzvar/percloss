@@ -1,5 +1,5 @@
 # percloss
-Perceptual loss research
+Perceptual loss research, more in notes.ipynb
 
 ## Sources to go through
 
