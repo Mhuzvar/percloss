@@ -1,7 +1,7 @@
 import torch
-import torch.nn as nn
+import torchaudio
 
-class myMSE(nn.Module):
+class myMSE(torch.nn.Module):
     def __init__(self, type=0):
         super(myMSE, self).__init__()
         self.type=type
@@ -13,7 +13,7 @@ class myMSE(nn.Module):
             targets (torch.Tensor): The ground truth labels or targets.
 
         Returns:
-            torch.Tensor: The computed MSE loss value.
+            torch.Tensor: The computed MSeE loss value.
         """
         predictions = self.preem(predictions)
         targets = self.preem(targets)
@@ -33,10 +33,57 @@ class myMSE(nn.Module):
                 kernel = torch.tensor([0.25, 0.5, 0.25], device=x.device).view(1, 1, -1)
             case _:
                 raise ValueError(f"Invalid loss type {self.type}.")
-        x = nn.functional.conv1d(x.unsqueeze(1), kernel, padding=1).squeeze(1)
+        x = torch.nn.functional.conv1d(x.unsqueeze(1), kernel, padding=1).squeeze(1)
         return x
 
-class PEMOQ(nn.Module):
+class cepdist(torch.nn.Module):
+    def __init__(self, type=0, p=2.0):
+        super(myMSE, self).__init__()
+        self.type=type
+        self.p=p
+
+    def forward(self, predictions, targets):
+        predictions = self.cep(predictions)
+        targets = self.cep(targets)
+
+        return torch.cdist(predictions, targets, p=self.p) #may not be best, revisit when necessary
+    
+    def cep(self, x):
+        spec_tf=torchaudio.transforms.Spectrogram(n_fft=128,
+                                                  hop_length=64,
+                                                  window_fn=torch.hann_window,
+                                                  power=2,
+                                                  normalized=False)
+        X=spec_tf(x)
+        match self.type:
+            case 0:
+                # normal power cepstrum
+                Xl=torch.log(X)
+                #ceps_tf=torchaudio.transforms.
+                # will need to find a good way to do ifft on a spectrogram
+            case 1:
+                # MFCC, transform x into mel spectrum
+                f_tf=torchaudio.transforms.MelScale(n_mels=80,
+                                                    sample_rate=44100,
+                                                    f_min=0.0,
+                                                    f_max=None
+                                                    n_stft=128, #same as nfft
+                                                    norm=None,
+                                                    scale='htk')
+                X=f_tf(X)
+                Xl=torch.log(X)
+                #ceps_tf=torchaudio.transforms.
+                # will need to test options for calculating dct
+            #case 2:
+                # PLPCC
+            case _:
+                raise ValueError(f"Invalid loss type {self.type}.")
+        cx = ceps_tf(Xl)
+        cx = torch.nn.functional.conv1d(x.unsqueeze(1), kernel, padding=1).squeeze(1)
+        return x
+
+
+class PEMOQ(torch.nn.Module):
     def __init__(self):
         super(PEMOQ, self).__init__()
 
@@ -108,7 +155,7 @@ class PEMOQ(nn.Module):
         return x
     
 
-class ViSQOLoss(nn.Module):
+class ViSQOLoss(torch.nn.Module):
     def __init__(self):
         super(ViSQOLoss, self).__init__()
 
