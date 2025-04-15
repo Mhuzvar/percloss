@@ -1,10 +1,13 @@
 import torch
 import torchaudio
 
-class myMSE(torch.nn.Module):
+class MSeE(torch.nn.Module):
     def __init__(self, type=0):
-        super(myMSE, self).__init__()
-        self.type=type
+        super(MSeE, self).__init__()
+        if type in range(3):
+            self.type=type
+        else:
+            raise ValueError(f"Invalid loss type {type}.")
 
     def forward(self, predictions, targets):
         """
@@ -38,8 +41,11 @@ class myMSE(torch.nn.Module):
 
 class cepdist(torch.nn.Module):
     def __init__(self, type=0, p=2.0):
-        super(myMSE, self).__init__()
-        self.type=type
+        super(cepdist, self).__init__()
+        if type in range(3):
+            self.type=type
+        else:
+            raise ValueError(f"Invalid loss type {type}.")
         self.p=p
 
     def forward(self, predictions, targets):
@@ -66,7 +72,7 @@ class cepdist(torch.nn.Module):
                 f_tf=torchaudio.transforms.MelScale(n_mels=80,
                                                     sample_rate=44100,
                                                     f_min=0.0,
-                                                    f_max=None
+                                                    f_max=None,
                                                     n_stft=128, #same as nfft
                                                     norm=None,
                                                     scale='htk')
