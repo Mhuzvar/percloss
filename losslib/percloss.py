@@ -26,24 +26,28 @@ class MSeE(torch.nn.Module):
     def preem(self, x):
         match self.type:
             case 0:
-                # a simple preemphasis
-                kernel = torch.tensor([0.25, 0.5, 0.25], device=x.device).view(1, 1, -1)
+                # a simple first order pre-emphasis
+                a=torch.tensor([1, 0])
+                b=torch.tensor([1, -0.85])
             case 1:
                 # closer to A-weight
-                kernel = torch.tensor([0.25, 0.5, 0.25], device=x.device).view(1, 1, -1)
+                a=torch.tensor([1, -1.31861375911, 0.32059452332])
+                b=torch.tensor([0.95616638497, -1.31960414122, 0.36343775625])
             case 2:
                 # outer and middle ear
-                kernel = torch.tensor([0.25, 0.5, 0.25], device=x.device).view(1, 1, -1)
+                a=torch.tensor([1])
+                b=torch.tensor([1])
             case _:
                 raise ValueError(f"Invalid loss type {self.type}.")
-        x = torch.nn.functional.conv1d(x.unsqueeze(1), kernel, padding=1).squeeze(1)
+        #x = torch.nn.functional.conv1d(x.unsqueeze(1), kernel, padding=1).squeeze(1)
+        x=torchaudio.functional.filtfilt(x,a,b,clamp=True) # time must be the last dim of x
         return x
 
 class cepdist(torch.nn.Module):
     def __init__(self, type=0, p=2.0):
         super(cepdist, self).__init__()
         if type in range(3):
-            self.type=type
+            self.mode=type
         else:
             raise ValueError(f"Invalid loss type {type}.")
         self.p=p
@@ -61,12 +65,10 @@ class cepdist(torch.nn.Module):
                                                   power=2,
                                                   normalized=False)
         X=spec_tf(x)
-        match self.type:
+        match self.mode:
             case 0:
                 # normal power cepstrum
                 Xl=torch.log(X)
-                #ceps_tf=torchaudio.transforms.
-                # will need to find a good way to do ifft on a spectrogram
             case 1:
                 # MFCC, transform x into mel spectrum
                 f_tf=torchaudio.transforms.MelScale(n_mels=80,
@@ -83,9 +85,12 @@ class cepdist(torch.nn.Module):
             #case 2:
                 # PLPCC
             case _:
-                raise ValueError(f"Invalid loss type {self.type}.")
-        cx = ceps_tf(Xl)
-        cx = torch.nn.functional.conv1d(x.unsqueeze(1), kernel, padding=1).squeeze(1)
+                raise ValueError(f"Invalid loss type {self.mode}.")
+        if self.mode==0:
+            cx = torch.fft.ifft(Xl, n=None, dim=-1, norm="backward")
+            # check and test spectrogram dimensionality
+        else:
+            cx = ceps_tf(Xl)
         return x
 
 
