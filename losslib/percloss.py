@@ -80,8 +80,8 @@ class cepdist(torch.nn.Module):
                                                     scale='htk')
                 X=f_tf(X)
                 Xl=torch.log(X)
-                #ceps_tf=torchaudio.transforms.
-                # will need to test options for calculating dct
+                ceps_tf=torchaudio.functional.create_dct(n_mfcc=80, n_mels=80, norm=None)
+                # returns (n_mels, n_mfcc) matrix to be right multiplied to Xl (if spectra are in rows)
             #case 2:
                 # PLPCC
             case _:
@@ -91,7 +91,7 @@ class cepdist(torch.nn.Module):
             # check and test spectrogram dimensionality
         else:
             cx = ceps_tf(Xl)
-        return x
+        return cx
 
 
 class PEMOQ(torch.nn.Module):
