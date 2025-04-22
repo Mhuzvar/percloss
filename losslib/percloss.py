@@ -2,12 +2,12 @@ import torch
 import torchaudio
 
 class MSeE(torch.nn.Module):
-    def __init__(self, type=0):
+    def __init__(self, mode=0):
         super(MSeE, self).__init__()
         if type in range(3):
-            self.type=type
+            self.mode=mode
         else:
-            raise ValueError(f"Invalid loss type {type}.")
+            raise ValueError(f"Invalid loss type {mode}.")
 
     def forward(self, predictions, targets):
         """
@@ -24,32 +24,34 @@ class MSeE(torch.nn.Module):
         return torch.mean((predictions - targets)**2)
     
     def preem(self, x):
-        match self.type:
+        match self.mode:
             case 0:
-                # a simple first order pre-emphasis
+                # a simple first order pre-emphasis (simple high pass)
                 a=torch.tensor([1, 0])
                 b=torch.tensor([1, -0.85])
             case 1:
                 # closer to A-weight
+                # taken from a pdf online, but likely not very usable
                 a=torch.tensor([1, -1.31861375911, 0.32059452332])
                 b=torch.tensor([0.95616638497, -1.31960414122, 0.36343775625])
             case 2:
                 # outer and middle ear
+                # can be made by approximation of the weighting function in ITU_T BS.1387 pg. 35
                 a=torch.tensor([1])
                 b=torch.tensor([1])
             case _:
-                raise ValueError(f"Invalid loss type {self.type}.")
+                raise ValueError(f"Invalid loss type {self.mode}.")
         #x = torch.nn.functional.conv1d(x.unsqueeze(1), kernel, padding=1).squeeze(1)
         x=torchaudio.functional.filtfilt(x,a,b,clamp=True) # time must be the last dim of x
         return x
 
 class cepdist(torch.nn.Module):
-    def __init__(self, type=0, p=2.0):
+    def __init__(self, mode='linear', p=2.0):
         super(cepdist, self).__init__()
-        if type in range(3):
-            self.mode=type
+        if mode in ['linear', 'mel', 'plp']:
+            self.mode=['linear', 'mel', 'plp'].index(mode)
         else:
-            raise ValueError(f"Invalid loss type {type}.")
+            raise ValueError(f"Invalid cepstrum type {type}.")
         self.p=p
 
     def forward(self, predictions, targets):
@@ -185,7 +187,7 @@ class ViSQOLoss(torch.nn.Module):
         predictions = self.gtone(predictions)
         targets = self.gtone(targets)
         # 2. patch creation
-
+        
         # 3. patch and subpatch alignment (needs to be simplified, maybe even omitted)
 
         # 4. NSIM
