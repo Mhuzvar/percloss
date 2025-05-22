@@ -4,7 +4,7 @@ import torchaudio
 class MSeE(torch.nn.Module):
     def __init__(self, mode=0):
         super(MSeE, self).__init__()
-        if type in range(3):
+        if mode in range(3):
             self.mode=mode
         else:
             raise ValueError(f"Invalid loss type {mode}.")
