@@ -1,13 +1,34 @@
+import numpy as np
 import torch
 import torchaudio
+import losslib.wfilters as wf
 
 class MSeE(torch.nn.Module):
-    def __init__(self, mode=0):
+    def __init__(self, mode=0, N=2047):
         super(MSeE, self).__init__()
         if mode in range(3):
             self.mode=mode
         else:
             raise ValueError(f"Invalid loss type {mode}.")
+        match self.mode:
+            case 0:
+                # a simple first order pre-emphasis (simple high pass)
+                self.a=torch.tensor([1, 0])
+                self.b=torch.tensor([1, -0.85])
+            case 1:
+                # closer to A-weight
+                # taken from a pdf online, but likely not very usable
+                self.a=torch.tensor([1, -1.31861375911, 0.32059452332])
+                self.b=torch.tensor([0.95616638497, -1.31960414122, 0.36343775625])
+            case 2:
+                # outer and middle ear
+                # can be made by approximation of the weighting function in ITU_T BS.1387 pg. 35
+                a=np.zeros(N)
+                a[0]=1
+                self.a=torch.from_numpy(a).type(torch.float)
+                self.b=torch.from_numpy(wf.Acurve(N=N)).type(torch.float)
+            case _:
+                raise ValueError(f"Invalid loss type {self.mode}.")
 
     def forward(self, predictions, targets):
         """
@@ -24,25 +45,8 @@ class MSeE(torch.nn.Module):
         return torch.mean((predictions - targets)**2)
     
     def preem(self, x):
-        match self.mode:
-            case 0:
-                # a simple first order pre-emphasis (simple high pass)
-                a=torch.tensor([1, 0])
-                b=torch.tensor([1, -0.85])
-            case 1:
-                # closer to A-weight
-                # taken from a pdf online, but likely not very usable
-                a=torch.tensor([1, -1.31861375911, 0.32059452332])
-                b=torch.tensor([0.95616638497, -1.31960414122, 0.36343775625])
-            case 2:
-                # outer and middle ear
-                # can be made by approximation of the weighting function in ITU_T BS.1387 pg. 35
-                a=torch.tensor([1])
-                b=torch.tensor([1])
-            case _:
-                raise ValueError(f"Invalid loss type {self.mode}.")
         #x = torch.nn.functional.conv1d(x.unsqueeze(1), kernel, padding=1).squeeze(1)
-        x=torchaudio.functional.filtfilt(x,a,b,clamp=True) # time must be the last dim of x
+        x=torchaudio.functional.filtfilt(x,self.a,self.b,clamp=True) # time must be the last dim of x
         return x
 
 class cepdist(torch.nn.Module):
