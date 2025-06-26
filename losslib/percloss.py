@@ -49,54 +49,82 @@ class MSeE(torch.nn.Module):
         x=torchaudio.functional.filtfilt(x,self.a,self.b,clamp=True) # time must be the last dim of x
         return x
 
+
+
 class cepdist(torch.nn.Module):
-    def __init__(self, mode='linear', p=2.0):
+    def __init__(self, mode='linear', wlen=128, wstep=64, fs=44100, p=2.0):
         super(cepdist, self).__init__()
         if mode in ['linear', 'mel', 'plp']:
             self.mode=['linear', 'mel', 'plp'].index(mode)
         else:
-            raise ValueError(f"Invalid cepstrum type {type}.")
+            raise ValueError(f"Invalid cepstrum type {mode}.")
         self.p=p
+        self.wlen=wlen
+        self.wstep=wstep
+        self.fs=fs
+        if self.mode:
+            self.onesided=True
+        else:
+            self.onesided=False
 
     def forward(self, predictions, targets):
         predictions = self.cep(predictions)
         targets = self.cep(targets)
 
-        return torch.cdist(predictions, targets, p=self.p) #may not be best, revisit when necessary
+        return torch.cdist(predictions, targets, p=self.p)
+            # returns a matrix of distance results, needs to be averaged
+            # torch.mean(a, (tuple of indeces)) should work
     
     def cep(self, x):
-        spec_tf=torchaudio.transforms.Spectrogram(n_fft=128,
-                                                  hop_length=64,
+        
+        spec_tf=torchaudio.transforms.Spectrogram(n_fft=self.wlen,
+                                                  hop_length=self.wstep,
                                                   window_fn=torch.hann_window,
                                                   power=2,
-                                                  normalized=False)
+                                                  normalized=False,
+                                                  onesided=self.onesided)
         X=spec_tf(x)
+            # return a matrix with spectra in columns (wlen, wnum)
         match self.mode:
             case 0:
                 # normal power cepstrum
                 Xl=torch.log(X)
             case 1:
+                """
                 # MFCC, transform x into mel spectrum
-                f_tf=torchaudio.transforms.MelScale(n_mels=80,
-                                                    sample_rate=44100,
+                f_tf=torchaudio.transforms.MelScale(n_mels=30,
+                                                    sample_rate=self.fs,
                                                     f_min=0.0,
                                                     f_max=None,
-                                                    n_stft=128, #same as nfft
+                                                    n_stft=(self.wlen//2)+1,
                                                     norm=None,
-                                                    scale='htk')
+                                                    mel_scale='htk')
                 X=f_tf(X)
-                Xl=torch.log(X)
-                ceps_tf=torchaudio.functional.create_dct(n_mfcc=80, n_mels=80, norm=None)
+                Xl=torch.log(X+1e-90)
+                ceps_tf=torchaudio.functional.create_dct(n_mfcc=30, n_mels=30, norm=None)
                 # returns (n_mels, n_mfcc) matrix to be right multiplied to Xl (if spectra are in rows)
+                """
+                mfcc = torchaudio.transforms.MFCC(sample_rate=self.fs,
+                                                  n_mfcc=40,
+                                                  dct_type=2,
+                                                  norm='ortho',
+                                                  log_mels=False,
+                                                  melkwargs={'n_fft':self.wlen,
+                                                             'hop_length':self.wstep,
+                                                             'n_mels':40,
+                                                             'center':False})
             #case 2:
                 # PLPCC
             case _:
                 raise ValueError(f"Invalid loss type {self.mode}.")
         if self.mode==0:
-            cx = torch.fft.ifft(Xl, n=None, dim=-1, norm="backward")
+            cx = torch.real(torch.fft.ifft(Xl, n=None, dim=0, norm="backward"))
+            cx = cx[:,0:(self.wlen//2)+1,:]
             # check and test spectrogram dimensionality
+        elif self.mode==1:
+            cx=mfcc(x)
         else:
-            cx = ceps_tf(Xl)
+            cx = torch.transpose(torch.matmul(torch.transpose(torch.squeeze(Xl), 0, 1), ceps_tf), 0, 1)
         return cx
 
 
@@ -233,3 +261,8 @@ class ViSQOLoss(torch.nn.Module):
         spectrogram = spectrogram.unfold(-1, wlen, wstep).mean(dim=-1)
 
         return spectrogram
+
+if __name__=="__main__":
+    cd = cepdist(mode='mel')
+    cd(torch.randn(256), torch.randn(256))
+    print(cd)
