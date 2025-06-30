@@ -1,7 +1,10 @@
 import numpy as np
 import torch
 import torchaudio
-import losslib.wfilters as wf
+try:
+    import losslib.wfilters as wf
+except:
+    import wfilters as wf
 
 class MSeE(torch.nn.Module):
     def __init__(self, mode=0, N=2047):
@@ -71,9 +74,9 @@ class cepdist(torch.nn.Module):
         predictions = self.cep(predictions)
         targets = self.cep(targets)
 
-        return torch.cdist(predictions, targets, p=self.p)
-            # returns a matrix of distance results, needs to be averaged
-            # torch.mean(a, (tuple of indeces)) should work
+        distmat = torch.cdist(predictions, targets, p=self.p)
+
+        return torch.mean(distmat, dim=(1,2))
     
     def cep(self, x):
         
@@ -89,21 +92,9 @@ class cepdist(torch.nn.Module):
             case 0:
                 # normal power cepstrum
                 Xl=torch.log(X)
+                if len(Xl.shape) == 2:
+                    Xl = Xl.unsqueeze(0)
             case 1:
-                """
-                # MFCC, transform x into mel spectrum
-                f_tf=torchaudio.transforms.MelScale(n_mels=30,
-                                                    sample_rate=self.fs,
-                                                    f_min=0.0,
-                                                    f_max=None,
-                                                    n_stft=(self.wlen//2)+1,
-                                                    norm=None,
-                                                    mel_scale='htk')
-                X=f_tf(X)
-                Xl=torch.log(X+1e-90)
-                ceps_tf=torchaudio.functional.create_dct(n_mfcc=30, n_mels=30, norm=None)
-                # returns (n_mels, n_mfcc) matrix to be right multiplied to Xl (if spectra are in rows)
-                """
                 mfcc = torchaudio.transforms.MFCC(sample_rate=self.fs,
                                                   n_mfcc=40,
                                                   dct_type=2,
@@ -118,9 +109,8 @@ class cepdist(torch.nn.Module):
             case _:
                 raise ValueError(f"Invalid loss type {self.mode}.")
         if self.mode==0:
-            cx = torch.real(torch.fft.ifft(Xl, n=None, dim=0, norm="backward"))
+            cx = torch.real(torch.fft.ifft(Xl, n=None, dim=1, norm="backward"))
             cx = cx[:,0:(self.wlen//2)+1,:]
-            # check and test spectrogram dimensionality
         elif self.mode==1:
             cx=mfcc(x)
         else:
@@ -263,6 +253,6 @@ class ViSQOLoss(torch.nn.Module):
         return spectrogram
 
 if __name__=="__main__":
-    cd = cepdist(mode='mel')
-    cd(torch.randn(256), torch.randn(256))
+    cd = cepdist(mode='linear')
+    print(cd(torch.randn(256), torch.randn(256)))
     print(cd)
