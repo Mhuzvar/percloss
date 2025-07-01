@@ -117,6 +117,51 @@ class cepdist(torch.nn.Module):
             cx = torch.transpose(torch.matmul(torch.transpose(torch.squeeze(Xl), 0, 1), ceps_tf), 0, 1)
         return cx
 
+class PEAQ(torch.nn.Module):
+    def __init__(self):
+        super(PEMOQ, self).__init__()
+    
+    def forward(self, predictions, targets):
+        # come up with a playback level estimation
+        p = self.pem(predictions)
+        t = self.pem(targets)
+
+
+
+    def pem(self, x):
+        nfft = 2048
+        step = 1024
+
+        if len(x.shape) == 1:
+            x = x.unsqueeze(0)
+
+        # cut up into 2048 sample windows and apply Hann window
+        nwin = np.floor((x.shape[1]-nfft)/step)+1
+        xw = torch.zeros(x.shape[0], nwin, nfft)
+        for i in range(nwin-1):
+            xw[:, i, :] = x[:,i*step:(i*step)+nfft]*torch.hann_window(nfft, periodic=False)
+        xw[:,nwin-1,(nwin-1)*step:]=x[:,(nwin-1)*step:]
+        xw[:,nwin-1,:] = xw[:,nwin-1,:]*torch.hann_window(nfft, periodic=False)
+
+        # fft and scaling
+        xw = torch.fft.fft(xw, n=nfft, dim=2)   # check dimensionality
+        Lp = 92                                 # default value
+        normfac = 1                             # revisit
+        fac = (10**(Lp/20))/normfac
+        xw = xw*fac
+
+        # outer and middle ear weighting function
+        f = np.linspace(0,22050,nfft)
+            # f = k*23.4375
+        W = -0.6*3.64*(f**(-0.8))+6.5*np.exp(-0.6*(f-3.3)**2)-(1e-3)*f**3.6
+        xw = torch.abs(xw)*W
+
+        # critical band grouping
+
+        # adding internal noise
+
+        # spreading
+
 
 class PEMOQ(torch.nn.Module):
     def __init__(self):
