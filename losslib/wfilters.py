@@ -193,24 +193,33 @@ def Bark_matrix():
         x = B_bands[i].split(' ')
         B_bands[i] = (float(x[1]), float(x[3]))
 
-    Bark = np.zeros((109,941))
-    Bark_48 = np.zeros((109,1025))
-    min_j = 0
-    min_k = 0
+    Bark = np.zeros((941,109))
+    Bark_48 = np.zeros((1025,109))
     for i in range(len(B_bands)):
-        for j in range(min_j,len(fl_44[0])):
-            if (fl_44[0][j] >= B_bands[i][0]) & (fl_44[0][j] < B_bands[i][1]):
-                Bark[i][j]+=1
-                min_j+=1
-        for k in range(min_k,len(fl_48[0])):
+        for j in range(len(fl_44[0])):
+            if (fl_44[0][j]-0.5*fl_44[1] >= B_bands[i][0]) & (fl_44[0][j]+0.5*fl_44[1] < B_bands[i][1]):
+                Bark[j][i]+=1
+            elif (fl_44[0][j]-0.5*fl_44[1] < B_bands[i][0]) & (fl_44[0][j]+0.5*fl_44[1] > B_bands[i][1]):
+                Bark[j][i]+=(B_bands[i][1]-B_bands[i][0])/fl_44[1]
+            elif (fl_44[0][j]-0.5*fl_44[1] < B_bands[i][0]) & (fl_44[0][j]+0.5*fl_44[1] > B_bands[i][0]):
+                Bark[j][i]+= ((fl_44[0][j]+0.5*fl_44[1])-B_bands[i][0])/fl_44[1]
+            elif (fl_44[0][j]-0.5*fl_44[1] < B_bands[i][1]) & (fl_44[0][j]+0.5*fl_44[1] > B_bands[i][1]):
+                Bark[j][i]+= (B_bands[i][1]-(fl_44[0][j]-0.5*fl_44[1]))/fl_44[1]
+        for k in range(len(fl_48[0])):
             if (fl_48[0][k] >= B_bands[i][0]) & (fl_48[0][k] < B_bands[i][1]):
-                Bark_48[i][k]+=1
-                min_k+=1
+                Bark_48[k][i]+=1
+            elif (fl_48[0][j]-0.5*fl_48[1] < B_bands[i][0]) & (fl_48[0][j]+0.5*fl_48[1] > B_bands[i][1]):
+                Bark_48[j][i]+=(B_bands[i][1]-B_bands[i][0])/fl_48[1]
+            elif (fl_48[0][j]-0.5*fl_48[1] < B_bands[i][0]) & (fl_48[0][j]+0.5*fl_48[1] > B_bands[i][0]):
+                Bark_48[j][i]+= ((fl_48[0][j]+0.5*fl_48[1])-B_bands[i][0])/fl_48[1]
+            elif (fl_48[0][j]-0.5*fl_48[1] < B_bands[i][1]) & (fl_48[0][j]+0.5*fl_48[1] > B_bands[i][1]):
+                Bark_48[j][i]+= (B_bands[i][1]-(fl_48[0][j]-0.5*fl_48[1]))/fl_48[1]
+    Bark = Bark[3:769]
     prnt = ''
     for i, row in enumerate(Bark):
         prnt+='['
         for j in range(len(row)):
-            prnt+=f'{int(row[j])},'
+            prnt+=f'{row[j]},'
         prnt=prnt[:-1]
         prnt+='],\n'
     prnt=prnt[:-2]
