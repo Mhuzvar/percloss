@@ -121,8 +121,16 @@ class PEAQ(torch.nn.Module):
     
     def forward(self, predictions, targets):
         # come up with a playback level estimation
-        p = self.pem(predictions)
-        t = self.pem(targets)
+        p_ep, p_uep, p_cb, p_sp = self.pem(predictions)
+        t_ep, t_uep, t_cb, p_sp = self.pem(targets)
+
+        e = self.crit_group(p_cb-t_cb)
+            # not correct
+        
+        p = self.prep_ep(p_ep, p_uep)
+        t = self.prep_ep(t_ep, t_uep)
+
+
 
 
 
@@ -138,20 +146,20 @@ class PEAQ(torch.nn.Module):
             x = x.unsqueeze(0)
 
         # cut up into 2048* sample windows and apply Hann window
-        # wlen may have to be revisited to compensate for the different fs 
+        # *wlen adjusted to 44.1 kHz fs to keep frequency resolution as similar as possible
         nwin = int(np.ceil((x.shape[1]-nfft)/step)+1)
-        xw = torch.zeros(x.shape[0], nwin, nfft)
+        xw_nw = torch.zeros(x.shape[0], nwin, nfft)
         for i in range(nwin-1):
-            xw[:, i, :] = x[:,i*step:(i*step)+nfft]*torch.hann_window(nfft, periodic=False)
-        xw[:,nwin-1,:x.shape[1]-(nwin-1)*step]=x[:,(nwin-1)*step:]
-        xw[:,nwin-1,:] = xw[:,nwin-1,:]*torch.hann_window(nfft, periodic=False)
+            xw_nw[:, i, :] = x[:,i*step:(i*step)+nfft]*torch.hann_window(nfft, periodic=False)
+        xw_nw[:,nwin-1,:x.shape[1]-(nwin-1)*step]=x[:,(nwin-1)*step:]
+        xw_nw[:,nwin-1,:] = xw_nw[:,nwin-1,:]*torch.hann_window(nfft, periodic=False)
 
-        # fft and scaling
-        xw = torch.fft.rfft(xw, n=nfft, dim=2, norm='forward')  # check dimensionality
+        # fft
+        xw_nw = torch.fft.rfft(xw_nw, n=nfft, dim=2, norm='forward')  # check dimensionality
             # may be replaced with torch.stft()
             # ! ITU-R BS.1387-2 specifies normalization by 1/nfft
-        xw = xw[:,:,imin:imax]
-        print(xw.shape)
+        xw_nw = xw_nw[:,:,imin:imax]
+        #print(xw_nw.shape) # Batch x wnum x spectrum length
 
         # rectification
             # probably solved by the torch.abs() in weighting step?
@@ -160,17 +168,35 @@ class PEAQ(torch.nn.Module):
         Lp = 92                                                 # default value
         normfac = 1                                             # revisit
         fac = (10**(Lp/20))/normfac
-        xw = xw*fac
+        xw_nw = xw_nw*fac
 
         # outer and middle ear weighting function
         f = np.linspace(0,44100,int(2048*(441/480)),endpoint=False)
             # approximately f = k*23.4375
         f = f[imin:imax]
         W = -0.6*3.64*((f/1000)**(-0.8)) + 6.5*np.exp(-0.6*((f/1000)-3.3)**2) - (1e-3)*(f/1000)**3.6
-        xw = torch.abs(xw)*W
-            # this should work fine, but only in this order
+        xw = torch.abs(xw_nw)*torch.from_numpy(10**(W/20))
+            # this should work fine
 
         # critical band grouping
+        xw = self.crit_group(torch.abs(xw)**2)
+
+        # adding internal noise
+        fc = wf.f_c()
+        W = 10**(0.4*0.364*((fc/1000)**(-0.8)))
+        uep = xw + torch.matmul(torch.ones(xw.shape, dtype=torch.double), torch.diag(W))
+
+        # frequency domain spreading
+        uep = self.freq_smear(fc, uep)
+
+        # time domain spreading
+        ep = 0
+
+        return ep, uep, xw, xw_nw
+    
+    def crit_group(self, x):
+        # the input onesided spectrum needs to be exactly 766 samples long (refer to self.pem())
+
         Bark = torch.tensor([[0.08775510204081641,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                              [0.9122459183673466,0.08775408163265276,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
                              [0.0,0.9179197959183678,0.08208020408163276,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],
@@ -938,11 +964,36 @@ class PEAQ(torch.nn.Module):
                              [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0], 
                              [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.25510204081640897]],
                              dtype=torch.double)
-        xw = torch.matmul(xw,Bark)
+        return torch.clamp(torch.matmul(x,Bark), min=0.000000000001)
+            # Batch x wnum x wlen*
+            # *number of critical bands
 
-        # adding internal noise
+    def freq_smear(self, fc, uep):
+        L = 10*torch.log10(uep)
+        Su = -24-(230/fc)+0.2*L
+        Sl = 27*torch.range(109)
+            # not sure if this is correct
+        res = 0.25
+        Z = 0
+            # need to find
+        
+        Eline = torch.zeros(uep.shape, dtype=torch.double)
+        Ecurl = torch.zeros(uep.shape, dtype=torch.double)
+        for j in range(109):
+            for k in range(uep.shape[1]):
+                if k<j:
+                    Eline[:,j,k] = (uep[:,j,k]*(10**(-res*(j-k)*Sl[j])))/(torch.sum(10**((-res*(j-torch.range(j)*Sl[j]))/10))+torch.sum(10**((res*(torch.range(j,Z)-j)*Su[j,:])/10)))
+                        # likely wrong
+                    Ecurl[:,j,k] = 0
+                else:
+                    Eline[:,j,k] = 0
+                    Ecurl[:,j,k] = 0
 
-        # spreading
+        NormSP_inv = 1/(torch.sum(Ecurl**0.4, dim=0)**(1/0.4))
+        
+        E2 = NormSP_inv*(torch.sum(Eline**0.4, dim=0)**(1/0.4))
+
+        return E2
 
 
 class PEMOQ(torch.nn.Module):
