@@ -971,22 +971,24 @@ class PEAQ(torch.nn.Module):
     def freq_smear(self, fc, uep):
         L = 10*torch.log10(uep)
         Su = -24-(230/fc)+0.2*L
-        Sl = 27*torch.range(109)
-            # not sure if this is correct
-        res = 0.25
-        Z = 0
-            # need to find
+            # only works as long as number of bands is last dimension of L
+        Sl = 27     # lower slope is a constant
+        res = 0.25  # Bark scale resolution in case of 109 bands
+        Z = 109     # maximum of j (number of frequency bands) 
         
-        Eline = torch.zeros(uep.shape, dtype=torch.double)
-        Ecurl = torch.zeros(uep.shape, dtype=torch.double)
-        for j in range(109):
-            for k in range(uep.shape[1]):
+        Eline = torch.zeros((uep.shape[0], uep.shape[2], uep.shape[1], uep.shape[2]), dtype=torch.double)
+        Ecurl = torch.zeros((uep.shape[0], uep.shape[2], uep.shape[1]), dtype=torch.double)
+
+        for j in range(109):                    # across frequency bands
+            for k in range(uep.shape[1]):       # across windows
                 if k<j:
-                    Eline[:,j,k] = (uep[:,j,k]*(10**(-res*(j-k)*Sl[j])))/(torch.sum(10**((-res*(j-torch.range(j)*Sl[j]))/10))+torch.sum(10**((res*(torch.range(j,Z)-j)*Su[j,:])/10)))
-                        # likely wrong
+                    for n in range(109):            # across frequency bands again
+                        Eline[:,j,k,n] = (uep[:,k,n]*(10**(-res*(j-k)*Sl)))/(torch.sum(10**((-res*(j-torch.range(0,j)*Sl))/10))+torch.sum(10**((res*(torch.range(j,Z)-j)*Su[j,:])/10)))
+                            # cycle over n may be redundant
                     Ecurl[:,j,k] = 0
                 else:
-                    Eline[:,j,k] = 0
+                    for n in range(109):
+                        Eline[:,j,k,n] = 0
                     Ecurl[:,j,k] = 0
 
         NormSP_inv = 1/(torch.sum(Ecurl**0.4, dim=0)**(1/0.4))
