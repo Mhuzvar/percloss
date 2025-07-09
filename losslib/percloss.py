@@ -188,6 +188,7 @@ class PEAQ(torch.nn.Module):
 
         # frequency domain spreading
         uep = self.freq_smear(fc, uep)
+            # changes dim to batch x frequency x time
 
         # time domain spreading
         ep = 0
@@ -976,26 +977,31 @@ class PEAQ(torch.nn.Module):
         res = 0.25  # Bark scale resolution in case of 109 bands
         Z = 109     # maximum of j (number of frequency bands) 
         
-        Eline = torch.zeros((uep.shape[0], uep.shape[2], uep.shape[1], uep.shape[2]), dtype=torch.double)
-        Ecurl = torch.zeros((uep.shape[0], uep.shape[2], uep.shape[1]), dtype=torch.double)
+        Eline = torch.zeros((uep.shape[0], uep.shape[2], uep.shape[2], uep.shape[1]), dtype=torch.double)
+        Ecurl = torch.zeros((uep.shape[0], uep.shape[2], uep.shape[2]), dtype=torch.double)
 
         for j in range(109):                    # across frequency bands
-            for k in range(uep.shape[1]):       # across windows
-                if k<j:
-                    for n in range(109):            # across frequency bands again
-                        Eline[:,j,k,n] = (uep[:,k,n]*(10**(-res*(j-k)*Sl)))/(torch.sum(10**((-res*(j-torch.range(0,j)*Sl))/10))+torch.sum(10**((res*(torch.range(j,Z)-j)*Su[j,:])/10)))
-                            # cycle over n may be redundant
-                    Ecurl[:,j,k] = 0
-                else:
-                    for n in range(109):
-                        Eline[:,j,k,n] = 0
-                    Ecurl[:,j,k] = 0
+            idx1 = torch.zeros(Z, dtype=torch.double)
+            idx2 = torch.zeros(Z, dtype=torch.double)
+            idx1[:j]=1
+            idx2[j:]=1
+            mu = torch.tensor(range(Z))
+            d1 = torch.sum((10**((-res*(j-mu)*Sl*idx1)/10))*idx1)
+            for n in range(uep.shape[1]):       # across windows (time)
+                d2 = torch.sum((10**(torch.einsum('i,bj->bji',res*(mu-j)*idx2, Su[:,n,:])/10))*idx2, dim=2)
+                for k in range(109):            # across frequency bands again
+                    if k<j:
+                        Eline[:,j,k,n] = (uep[:,n,k]*(10**(-res*(j-k)*Sl))/10)/(d1+d2[:,n])
+                        Ecurl[:,j,k] = (10**((-res*(j-k)*Sl)/10))/(d1+d2[:,0])
+                    else:
+                        Eline[:,j,k,n] = (uep[:,n,k]*(10**(res*(k-j)*Su[:,n,k]))/10)/(d1+d2[:,n])
+                        Ecurl[:,j,k] = (10**((res*(k-j)*Su[:,n,0])/10))/(d1+d2[:,0])
 
-        NormSP_inv = 1/(torch.sum(Ecurl**0.4, dim=0)**(1/0.4))
+        NormSP_inv = 1/(torch.sum(Ecurl**0.4, dim=1)**(1/0.4))
         
-        E2 = NormSP_inv*(torch.sum(Eline**0.4, dim=0)**(1/0.4))
+        E2 = torch.transpose(torch.sum(Eline**0.4, dim=1)**(1/0.4),0,2)*torch.t(NormSP_inv)
 
-        return E2
+        return torch.transpose(E2,0,2)
 
 
 class PEMOQ(torch.nn.Module):
