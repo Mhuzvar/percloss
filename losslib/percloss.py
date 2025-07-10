@@ -191,7 +191,17 @@ class PEAQ(torch.nn.Module):
             # changes dim to batch x frequency x time
 
         # time domain spreading
-        ep = 0
+        tau = 0.008+(2.2/fc)
+        a_vec = np.exp(-4/(187.5*tau))
+        ep = torch.zeros(uep.shape)
+        for i in range(1, ep.shape[-1]):
+            ep[:,:,i] = ep[:,:,i-1]*a_vec + uep[:,:,i]*(1-a_vec)
+            # inefficient for longer signals, revisit later
+        #for i, a in enumerate(a_vec):
+        #    print(a)
+        #    ep[:,i,1:] = torchaudio.functional.lfilter(uep[:,:,1:],a,1-a,clamp=False)
+            # shows anerror I could not solve
+        ep=torch.maximum(ep,uep)
 
         return ep, uep, xw, xw_nw
     
