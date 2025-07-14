@@ -121,16 +121,23 @@ class PEAQ(torch.nn.Module):
     
     def forward(self, predictions, targets):
         # come up with a playback level estimation
-        p_ep, p_uep, p_cb, p_sp = self.pem(predictions)
-        t_ep, t_uep, t_cb, p_sp = self.pem(targets)
+        p_ep, p_mp, p_cb, p_sp = self.pem(predictions)
+        t_ep, t_mp, t_cb, t_sp = self.pem(targets)
 
-        e = self.crit_group(p_cb-t_cb)
-            # not correct
+        # error signal
+        np = self.crit_group(torch.abs((torch.abs(t_sp)-torch.abs(p_sp)))**2)
         
-        p = self.prep_ep(p_ep, p_uep)
-        t = self.prep_ep(t_ep, t_uep)
+        # masker
+        p_msk = self.calc_mask(p_ep)
+        t_msk = self.calc_mask(t_ep)
 
+        # specific loudness patterns
+        p_slp = self.calc_loud(p_ep)
+        t_slp = self.calc_loud(t_ep)
 
+        # excitation patterns (x_ep and...)
+        p_epa = self.calc_adap(p_ep)
+        t_epa = self.calc_adap(t_ep)
 
 
 
@@ -189,6 +196,7 @@ class PEAQ(torch.nn.Module):
         # frequency domain spreading
         uep = self.freq_smear(fc, uep)
             # changes dim to batch x frequency x time
+        mp = self.calc_mod(uep)
 
         # time domain spreading
         tau = 0.008+(2.2/fc)
@@ -200,10 +208,10 @@ class PEAQ(torch.nn.Module):
         #for i, a in enumerate(a_vec):
         #    print(a)
         #    ep[:,i,1:] = torchaudio.functional.lfilter(uep[:,:,1:],a,1-a,clamp=False)
-            # shows anerror I could not solve
+            # shows an error I could not solve
         ep=torch.maximum(ep,uep)
 
-        return ep, uep, xw, xw_nw
+        return ep, mp, xw, xw_nw
     
     def crit_group(self, x):
         # the input onesided spectrum needs to be exactly 766 samples long (refer to self.pem())
@@ -1013,6 +1021,17 @@ class PEAQ(torch.nn.Module):
 
         return torch.transpose(E2,0,2)
 
+    def calc_mask(self, x):
+        print('WIP')
+
+    def calc_loud(self, x):
+        print('WIP')
+
+    def calc_adap(self, x):
+        print('WIP')
+    
+    def calc_mod(self, x):
+        print('WIP')
 
 class PEMOQ(torch.nn.Module):
     def __init__(self):
