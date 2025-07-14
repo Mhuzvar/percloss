@@ -1022,7 +1022,12 @@ class PEAQ(torch.nn.Module):
         return torch.transpose(E2,0,2)
 
     def calc_mask(self, x):
-        print('WIP')
+        res = 0.25
+
+        m = 3*torch.ones(x.shape, dtype=torch.double)
+        m[:,np.ceil(12/res):,:]=0.25*torch.arange(np.ceil(12/res),x.shape[1], dtype=torch.double)*res
+
+        return x/(10**(m/10))
 
     def calc_loud(self, x):
         print('WIP')
