@@ -132,8 +132,14 @@ class PEAQ(torch.nn.Module):
         t_msk = self.calc_mask(t_ep)
 
         # specific loudness patterns
-        p_slp = self.calc_loud(p_ep)
-        t_slp = self.calc_loud(t_ep)
+        p_slp = self.pat_adap(p_ep)
+        t_slp = self.pat_adap(t_ep)
+            # low passed excitation patterns
+        LevCorr = self.Lev_Corr(p_slp, t_slp)
+        p_slp = p_slp*LevCorr
+        t_slp = t_slp*LevCorr
+            # level adaptation
+        
 
         # excitation patterns (x_ep and...)
         p_epa = self.calc_adap(p_ep)
@@ -1029,8 +1035,22 @@ class PEAQ(torch.nn.Module):
 
         return x/(10**(m/10))
 
-    def calc_loud(self, x):
-        print('WIP')
+    def pat_adap(self, x):
+        fc = wf.f_c()
+        tau = 0.008 + (4.2/fc)
+        a = np.exp(-(int((int(np.floor(2048*(441/480))))//2)+1)/(44100*tau))
+
+        P = torch.zeros(x.shape)
+        P[:,:,0] = x[:,:,0]*(1-a)
+        for i in range(1, P.shape[-1]):
+            P[:,:,i] = P[:,:,i-1]*a + x[:,:,i]*(1-a)
+        
+        return P
+    
+    def Lev_Corr(self, Pr, Pt):
+        LC = (torch.sum(torch.sqrt(Pt*Pr), dim=1)/torch.sum(Pt, dim=1))**2
+        LC[LC>1] = 1/LC[LC>1]
+        return LC
 
     def calc_adap(self, x):
         print('WIP')
