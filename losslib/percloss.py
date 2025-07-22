@@ -121,29 +121,29 @@ class PEAQ(torch.nn.Module):
     
     def forward(self, predictions, targets):
         # come up with a playback level estimation
-        p_ep, p_mp, p_cb, p_sp = self.pem(predictions)
-        t_ep, t_mp, t_cb, t_sp = self.pem(targets)
+        t_ep, t_mp, t_cb, t_sp = self.pem(predictions)
+        r_ep, r_mp, r_cb, r_sp = self.pem(targets)
 
         # error signal
-        np = self.crit_group(torch.abs((torch.abs(t_sp)-torch.abs(p_sp)))**2)
+        np = self.crit_group(torch.abs((torch.abs(r_sp)-torch.abs(t_sp)))**2)
         
         # masker
-        p_msk = self.calc_mask(p_ep)
         t_msk = self.calc_mask(t_ep)
+        r_msk = self.calc_mask(r_ep)
 
         # specific loudness patterns
-        p_slp = self.pat_adap(p_ep)
-        t_slp = self.pat_adap(t_ep)
+        t_slp = self.pat_adap_LP(t_ep)
+        r_slp = self.pat_adap_LP(r_ep)
             # low passed excitation patterns
-        LevCorr = self.Lev_Corr(p_slp, t_slp)
-        p_slp = p_slp*LevCorr
-        t_slp = t_slp*LevCorr
+        t_slp, r_slp = self.lev_adap(t_slp, r_slp)
             # level adaptation
+        t_Ep, r_Ep = self.pat_adap(t_slp, r_slp)
+            # spectrally adapted patterns E_{P,x}
         
 
         # excitation patterns (x_ep and...)
-        p_epa = self.calc_adap(p_ep)
         t_epa = self.calc_adap(t_ep)
+        r_epa = self.calc_adap(r_ep)
 
 
 
@@ -161,7 +161,7 @@ class PEAQ(torch.nn.Module):
         # cut up into 2048* sample windows and apply Hann window
         # *wlen adjusted to 44.1 kHz fs to keep frequency resolution as similar as possible
         nwin = int(np.ceil((x.shape[1]-nfft)/step)+1)
-        xw_nw = torch.zeros(x.shape[0], nwin, nfft)
+        xw_nw = torch.zeros(x.shape[0], nwin, nfft, dtype=torch.double)
         for i in range(nwin-1):
             xw_nw[:, i, :] = x[:,i*step:(i*step)+nfft]*torch.hann_window(nfft, periodic=False)
         xw_nw[:,nwin-1,:x.shape[1]-(nwin-1)*step]=x[:,(nwin-1)*step:]
@@ -1031,11 +1031,11 @@ class PEAQ(torch.nn.Module):
         res = 0.25
 
         m = 3*torch.ones(x.shape, dtype=torch.double)
-        m[:,np.ceil(12/res):,:]=0.25*torch.arange(np.ceil(12/res),x.shape[1], dtype=torch.double)*res
+        m[:,int(np.ceil(12/res)):,:]=0.25*torch.arange(np.ceil(12/res),x.shape[1], dtype=torch.double).unsqueeze(-1)*res
 
         return x/(10**(m/10))
 
-    def pat_adap(self, x):
+    def pat_adap_LP(self, x):
         fc = wf.f_c()
         tau = 0.008 + (4.2/fc)
         a = np.exp(-(int((int(np.floor(2048*(441/480))))//2)+1)/(44100*tau))
@@ -1047,10 +1047,55 @@ class PEAQ(torch.nn.Module):
         
         return P
     
-    def Lev_Corr(self, Pr, Pt):
+    def Lev_Corr(self, Pt, Pr):
         LC = (torch.sum(torch.sqrt(Pt*Pr), dim=1)/torch.sum(Pt, dim=1))**2
-        LC[LC>1] = 1/LC[LC>1]
-        return LC
+        #LC[LC>1] = 1/LC[LC>1]
+        return LC.repeat(1,Pr.shape[1],1)
+    
+    def lev_adap(self, Pt, Pr):
+        LevCorr = self.Lev_Corr(Pt, Pr)
+        Pt[LevCorr<1] = Pt[LevCorr<1]*LevCorr[LevCorr<1]
+        Pr[LevCorr>1] = Pr[LevCorr>1]/LevCorr[LevCorr>1]
+        return Pt, Pr
+    
+    def pat_adap(self, Et, Er):
+        fc = wf.f_c()
+        tau = 0.008 + (4.2/fc)
+        a = np.exp(-(int((int(np.floor(2048*(441/480))))//2)+1)/(44100*tau))
+        a = a.repeat(Et.shape[-1],1).transpose(0,1)
+        mask = torch.zeros(Et.shape)
+        R = torch.zeros(Et.shape, dtype=torch.double)
+        for n in range(R.shape[-1]):
+            mask[:,:,-n-1]=1
+            numer = torch.sum(mask*Et*Er*torch.fliplr(a**torch.arange(0,Et.shape[-1])), dim=2)
+            denom = torch.sum(mask*Er*Er*torch.fliplr(a**torch.arange(0,Et.shape[-1])), dim=2)
+            R[:,:,n] = numer/denom
+                # ! need to fix situations where denom is 0
+        a = np.exp(-(int((int(np.floor(2048*(441/480))))//2)+1)/(44100*tau))
+            # returned to minimal size for later use
+        
+        Rt = torch.ones(R.shape, dtype=torch.double)
+        Rr = torch.ones(R.shape, dtype=torch.double)
+        Rt[R>1] = 1/R[R>1]
+        Rr[R<1] = R[R<1]
+
+        M = 8
+        M1 = 3
+        M2 = 4
+        for k in range(R.shape[1]):
+            Rt[:,k,:] = torch.sum(Rt[:,max(k-M1, 0):min(k+M2,R.shape[1]-1),:], dim=1)/M
+            Rr[:,k,:] = torch.sum(Rr[:,max(k-M1, 0):min(k+M2,R.shape[1]-1),:], dim=1)/M
+        
+        PCt = torch.zeros(R.shape)
+        PCr = torch.zeros(R.shape)
+
+        PCt[:,:,0] = (1-a)*Rt[:,:,0]
+        PCr[:,:,0] = (1-a)*Rr[:,:,0]
+        for n in range(1,PCt.shape[-1]):
+            PCt[:,:,n] = a*PCt[:,:,n-1]+(1-a)*Rt[:,:,n]
+            PCr[:,:,n] = a*PCr[:,:,n-1]+(1-a)*Rr[:,:,n]
+        
+        return Et*PCt, Er*PCr
 
     def calc_adap(self, x):
         print('WIP')
@@ -1194,5 +1239,5 @@ class ViSQOLoss(torch.nn.Module):
 
 if __name__=="__main__":
     peaq = PEAQ()
-    sig = torch.randn((1,3000))
-    print(peaq.pem(sig))
+    sig = torch.randn((1,3000), dtype=torch.double)
+    print(peaq(sig, torch.sign(sig)*torch.abs(sig)**(1/2)))
