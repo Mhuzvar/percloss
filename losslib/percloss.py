@@ -121,8 +121,8 @@ class PEAQ(torch.nn.Module):
     
     def forward(self, predictions, targets):
         # come up with a playback level estimation
-        t_ep, t_mp, t_cb, t_sp = self.pem(predictions)
-        r_ep, r_mp, r_cb, r_sp = self.pem(targets)
+        t_ep, t_mp, t_modEl, t_cb, t_sp = self.pem(predictions)
+        r_ep, r_mp, r_modEl, r_cb, r_sp = self.pem(targets)
 
         # error signal
         np = self.crit_group(torch.abs((torch.abs(r_sp)-torch.abs(t_sp)))**2)
@@ -202,7 +202,7 @@ class PEAQ(torch.nn.Module):
         # frequency domain spreading
         uep = self.freq_smear(fc, uep)
             # changes dim to batch x frequency x time
-        mp = self.calc_mod(uep)
+        mp, mod_eline = self.calc_mod(uep)
 
         # time domain spreading
         tau = 0.008+(2.2/fc)
@@ -217,7 +217,7 @@ class PEAQ(torch.nn.Module):
             # shows an error I could not solve
         ep=torch.maximum(ep,uep)
 
-        return ep, mp, xw, xw_nw
+        return ep, mp, mod_eline, xw, xw_nw
     
     def crit_group(self, x):
         # the input onesided spectrum needs to be exactly 766 samples long (refer to self.pem())
@@ -1098,11 +1098,23 @@ class PEAQ(torch.nn.Module):
         return Et*PCt, Er*PCr
 
     def calc_adap(self, x):
-        print('WIP')
+        print('calc_adap WIP')
     
     def calc_mod(self, x):
-        print('WIP')
+        fc = wf.f_c()
+        tau = 0.008 + (4.2/fc)
+        a = np.exp(-(int((int(np.floor(2048*(441/480))))//2)+1)/(44100*tau))
 
+        Eder = torch.zeros(x.shape, dtype=torch.double)
+        El = torch.zeros(x.shape, dtype=torch.double)
+        Eder[:,:,0] = (1-a)*(44100/((((np.floor(2048*(441/480))))//2)+1))*torch.abs(x[:,:,0]**0.3)
+        El[:,:,0] = (1-a)*(x[:,:,0]**0.3)
+        for n in range(1,x.shape[-1]):
+            Eder[:,:,n] = a*Eder[:,:,n-1] + (1-a)*(44100/((((np.floor(2048*(441/480))))//2)+1))*torch.abs(x[:,:,n]**0.3 - x[:,:,n-1]**0.3)
+            El[:,:,n] = a*El[:,:,n-1] + (1-a)*(x[:,:,n]**0.3)
+        Mod = Eder/(1+(El/0.3))
+        return Mod, El
+    
 class PEMOQ(torch.nn.Module):
     def __init__(self):
         super(PEMOQ, self).__init__()
