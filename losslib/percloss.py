@@ -131,7 +131,6 @@ class PEAQ(torch.nn.Module):
         t_msk = self.calc_mask(t_ep)
         r_msk = self.calc_mask(r_ep)
 
-        # specific loudness patterns
         t_slp = self.pat_adap_LP(t_ep)
         r_slp = self.pat_adap_LP(r_ep)
             # low passed excitation patterns
@@ -140,10 +139,15 @@ class PEAQ(torch.nn.Module):
         t_Ep, r_Ep = self.pat_adap(t_slp, r_slp)
             # spectrally adapted patterns E_{P,x}
         
+        # specific loudness patterns
+        Nt = self.calc_loud(t_ep)
+        Nr = self.calc_loud(r_ep)
 
-        # excitation patterns (x_ep and...)
-        t_epa = self.calc_adap(t_ep)
-        r_epa = self.calc_adap(r_ep)
+        # probably unnecessary
+        #t_epa = self.calc_adap(t_ep)
+        #r_epa = self.calc_adap(r_ep)
+
+        MOVs = self.calc_MOV()
 
 
 
@@ -1115,6 +1119,21 @@ class PEAQ(torch.nn.Module):
         Mod = Eder/(1+(El/0.3))
         return Mod, El
     
+    def calc_loud(self, E):
+        print('calc_loud WIP, unfinished atn function!')
+        f =  wf.f_c()
+        Eth = 10**(0.364*(f/1000)**(-0.8))
+        s = 10**((-2-2.05*self.atn(f/4000)-0.75*self.atn((f/1600)**2))/10)
+        N = 1.07664*((Eth/(s*(10**4)))**0.23)*(((1-s+(s*torch.transpose(E, 1,2))/Eth)**0.23)-1)
+        return (25/N.shape[1])*torch.sum(torch.clamp(N, min=0), dim=2)
+    
+    def atn(self, x):
+        print('atn WIP, maybe arc tangent?')
+        return x
+    
+    def calc_MOV(self):
+        print('calc_MOV WIP')
+        
 class PEMOQ(torch.nn.Module):
     def __init__(self):
         super(PEMOQ, self).__init__()
