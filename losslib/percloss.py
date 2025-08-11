@@ -140,14 +140,14 @@ class PEAQ(torch.nn.Module):
             # spectrally adapted patterns E_{P,x}
         
         # specific loudness patterns
-        Nt = self.calc_loud(t_ep)
-        Nr = self.calc_loud(r_ep)
+        Nt, Eth = self.calc_loud(t_ep)
+        Nr, _ = self.calc_loud(r_ep)
 
         # probably unnecessary
         #t_epa = self.calc_adap(t_ep)
         #r_epa = self.calc_adap(r_ep)
 
-        MOVs = self.calc_MOV()
+        MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth)
 
 
 
@@ -1122,9 +1122,9 @@ class PEAQ(torch.nn.Module):
         Eth = 10**(0.364*(f/1000)**(-0.8))
         s = 10**((-2-2.05*torch.arctan(f/4000)-0.75*torch.arctan((f/1600)**2))/10)
         N = 1.07664*((Eth/(s*(10**4)))**0.23)*(((1-s+(s*torch.transpose(E, 1,2))/Eth)**0.23)-1)
-        return (25/N.shape[1])*torch.sum(torch.clamp(N, min=0), dim=2)
+        return (25/N.shape[1])*torch.sum(torch.clamp(N, min=0), dim=2), Eth
     
-    def calc_MOV(self):
+    def calc_MOV(self, t_mp, r_mp, r_modEl, Eth):
         # Need to calculate:
         #   WinModDiff1_B
         #   AvgModDiff1_B
@@ -1138,10 +1138,22 @@ class PEAQ(torch.nn.Module):
         #   ADB_B
         #   EHS_B
         print('calc_MOV WIP')
-        WinModDiff1_B = self.WinX(self.ModDiff())
+        MD1B = self.ModDiff(t_mp, r_mp, 1, 1)
+        TempWt = torch.sum(r_modEl.transpose(1,2)/(r_modEl.transpose(1,2)+100*Eth), dim=2)
+        WinModDiff1_B = self.WinX(MD1B)
+        AvgModDiff1_B = self.AvgX(MD1B, W=TempWt)
+        AvgModDiff2_B = self.AvgX(self.ModDiff(t_mp, r_mp, 0.1, 0.01), W=TempWt)
 
-    def ModDiff(self, x):
-        print('ModDiff WIP')
+        return
+
+    def ModDiff(self, xt, xr, negWt, offset):
+        if negWt != 1:
+            w = torch.ones(xt.shape)
+            w[xt<xr]=negWt
+        else:
+            w=1
+        md = w*torch.abs(xt-xr)/(offset+xr)
+        return 100*torch.sum(md, dim=1)/xt.shape[1]
 
     def AvgX(self, x, W=None):
         if W==None:
@@ -1301,5 +1313,5 @@ class ViSQOLoss(torch.nn.Module):
 
 if __name__=="__main__":
     peaq = PEAQ()
-    sig = torch.randn((1,3000), dtype=torch.double)
+    sig = torch.randn((1,10000), dtype=torch.double)
     print(peaq(sig, torch.sign(sig)*torch.abs(sig)**(1/2)))
