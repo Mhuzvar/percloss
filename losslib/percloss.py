@@ -1100,9 +1100,6 @@ class PEAQ(torch.nn.Module):
             PCr[:,:,n] = a*PCr[:,:,n-1]+(1-a)*Rr[:,:,n]
         
         return Et*PCt, Er*PCr
-
-    def calc_adap(self, x):
-        print('calc_adap WIP')
     
     def calc_mod(self, x):
         fc = wf.f_c()
@@ -1120,19 +1117,53 @@ class PEAQ(torch.nn.Module):
         return Mod, El
     
     def calc_loud(self, E):
-        print('calc_loud WIP, unfinished atn function!')
+        print('Assuming atn() in paper means arc tangent!')
         f =  wf.f_c()
         Eth = 10**(0.364*(f/1000)**(-0.8))
-        s = 10**((-2-2.05*self.atn(f/4000)-0.75*self.atn((f/1600)**2))/10)
+        s = 10**((-2-2.05*torch.arctan(f/4000)-0.75*torch.arctan((f/1600)**2))/10)
         N = 1.07664*((Eth/(s*(10**4)))**0.23)*(((1-s+(s*torch.transpose(E, 1,2))/Eth)**0.23)-1)
         return (25/N.shape[1])*torch.sum(torch.clamp(N, min=0), dim=2)
     
-    def atn(self, x):
-        print('atn WIP, maybe arc tangent?')
-        return x
-    
     def calc_MOV(self):
+        # Need to calculate:
+        #   WinModDiff1_B
+        #   AvgModDiff1_B
+        #   AvgModDiff2_B
+        #   RmsNoiseLoud_B
+        #   BandwidthRef_B
+        #   BandwidthTest_B
+        #   Total NMR_B
+        #   RelDistFrames_B
+        #   MFPD_B
+        #   ADB_B
+        #   EHS_B
         print('calc_MOV WIP')
+        WinModDiff1_B = self.WinX(self.ModDiff())
+
+    def ModDiff(self, x):
+        print('ModDiff WIP')
+
+    def AvgX(self, x, W=None):
+        if W==None:
+            N = x.shape[1]
+        else:
+            N = torch.sum(W)
+            x = x*W
+        return torch.sum(x, dim=1)/N
+    
+    def RmsX(self, x, W=None, Z=1):
+        if W==None:
+            N = x.shape[1]**2
+        else:
+            N = torch.sum(W)**2
+            x = (x*W)**2
+        return torch.sqrt(Z)*torch.sqrt(torch.sum(x, dim=1)/N)
+
+    def WinX(self, x):
+        WA = torch.zeros(x.shape[0])
+        for i in range(x.shape[1]-1, 2, -1):
+            WA += (torch.sum(torch.sqrt(x[:, i-2:i+1]), dim=1)/4)**4
+        return torch.sqrt(WA/(x.shape[1]-3))
         
 class PEMOQ(torch.nn.Module):
     def __init__(self):
