@@ -147,7 +147,7 @@ class PEAQ(torch.nn.Module):
         #t_epa = self.calc_adap(t_ep)
         #r_epa = self.calc_adap(r_ep)
 
-        MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth)
+        MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep)
 
 
 
@@ -1124,7 +1124,7 @@ class PEAQ(torch.nn.Module):
         N = 1.07664*((Eth/(s*(10**4)))**0.23)*(((1-s+(s*torch.transpose(E, 1,2))/Eth)**0.23)-1)
         return (25/N.shape[1])*torch.sum(torch.clamp(N, min=0), dim=2), Eth
     
-    def calc_MOV(self, t_mp, r_mp, r_modEl, Eth):
+    def calc_MOV(self, t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep):
         # Need to calculate:
         #   WinModDiff1_B
         #   AvgModDiff1_B
@@ -1144,7 +1144,17 @@ class PEAQ(torch.nn.Module):
         AvgModDiff1_B = self.AvgX(MD1B, W=TempWt)
         AvgModDiff2_B = self.AvgX(self.ModDiff(t_mp, r_mp, 0.1, 0.01), W=TempWt)
 
-        return
+        st = 0.15*t_mp.transpose(1,2)+0.5
+        sr = 0.15*r_mp.transpose(1,2)+0.5
+        #beta = torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep)
+        #NL = ((Eth/st)**0.23)*(((1+torch.clamp(st*t_Ep-sr*r_Ep,min=0)/(Eth+sr*r_Ep*beta))**0.23)-1)
+        NL = ((Eth/st)**0.23)*(((1+torch.clamp(st*t_Ep.transpose(1,2)-sr*r_Ep.transpose(1,2),min=0)/(Eth+sr*r_Ep.transpose(1,2)*torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep).transpose(1,2)))**0.23)-1)
+        RmsNoiseLoud_B = self.RmsX(NL)
+        # may not be completely correct, returns fband dependent result
+
+        #Bandwidth
+
+        return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B
 
     def ModDiff(self, xt, xr, negWt, offset):
         if negWt != 1:
@@ -1169,7 +1179,7 @@ class PEAQ(torch.nn.Module):
         else:
             N = torch.sum(W)**2
             x = (x*W)**2
-        return torch.sqrt(Z)*torch.sqrt(torch.sum(x, dim=1)/N)
+        return np.sqrt(Z)*torch.sqrt(torch.sum(x, dim=1)/N)
 
     def WinX(self, x):
         WA = torch.zeros(x.shape[0])
