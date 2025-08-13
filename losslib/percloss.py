@@ -125,7 +125,7 @@ class PEAQ(torch.nn.Module):
         r_ep, r_mp, r_modEl, r_cb, r_sp = self.pem(targets)
 
         # error signal
-        np = self.crit_group(torch.abs((torch.abs(r_sp)-torch.abs(t_sp)))**2)
+        np = self.crit_group(torch.abs((torch.abs(r_sp[:,:,3:769])-torch.abs(t_sp[:,:,3:769])))**2)
         
         # masker
         t_msk = self.calc_mask(t_ep)
@@ -147,7 +147,7 @@ class PEAQ(torch.nn.Module):
         #t_epa = self.calc_adap(t_ep)
         #r_epa = self.calc_adap(r_ep)
 
-        MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep)
+        MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(t_sp)), 20*torch.log10(torch.abs(r_sp)))
 
 
 
@@ -175,7 +175,8 @@ class PEAQ(torch.nn.Module):
         xw_nw = torch.fft.rfft(xw_nw, n=nfft, dim=2, norm='forward')  # check dimensionality
             # may be replaced with torch.stft()
             # ! ITU-R BS.1387-2 specifies normalization by 1/nfft
-        xw_nw = xw_nw[:,:,imin:imax]
+        #xw_nw = xw_nw[:,:,imin:imax]
+            #done later
         #print(xw_nw.shape) # Batch x wnum x spectrum length
 
         # rectification
@@ -184,15 +185,16 @@ class PEAQ(torch.nn.Module):
         #scaling of the input signals
         Lp = 92                                                 # default value
         normfac = 1                                             # revisit
+        print('##################\ninput signal scaling likely wrong!\n##################')
         fac = (10**(Lp/20))/normfac
-        xw_nw = xw_nw*fac
+        xw_nw = xw_nw[:,:,:942]*fac
 
         # outer and middle ear weighting function
         f = np.linspace(0,44100,int(2048*(441/480)),endpoint=False)
             # approximately f = k*23.4375
         f = f[imin:imax]
         W = -0.6*3.64*((f/1000)**(-0.8)) + 6.5*np.exp(-0.6*((f/1000)-3.3)**2) - (1e-3)*(f/1000)**3.6
-        xw = torch.abs(xw_nw)*torch.from_numpy(10**(W/20))
+        xw = torch.abs(xw_nw[:,:,imin:imax])*torch.from_numpy(10**(W/20))
             # this should work fine
 
         # critical band grouping
@@ -1016,7 +1018,7 @@ class PEAQ(torch.nn.Module):
             mu = torch.tensor(range(Z))
             d1 = torch.sum((10**((-res*(j-mu)*Sl*idx1)/10))*idx1)
             for n in range(uep.shape[1]):       # across windows (time)
-                d2 = torch.sum((10**(torch.einsum('i,bj->bji',res*(mu-j)*idx2, Su[:,n,:])/10))*idx2, dim=2)
+                d2 = torch.sum((10**(torch.einsum('i,bj->bji',res*(mu-j)*idx2, Su[:,:,j])/10))*idx2, dim=2)
                 for k in range(109):            # across frequency bands again
                     if k<j:
                         Eline[:,j,k,n] = (uep[:,n,k]*(10**(-res*(j-k)*Sl))/10)/(d1+d2[:,n])
@@ -1054,7 +1056,7 @@ class PEAQ(torch.nn.Module):
     def Lev_Corr(self, Pt, Pr):
         LC = (torch.sum(torch.sqrt(Pt*Pr), dim=1)/torch.sum(Pt, dim=1))**2
         #LC[LC>1] = 1/LC[LC>1]
-        return LC.repeat(1,Pr.shape[1],1)
+        return LC.repeat(Pr.shape[1],1,1).transpose(1,0)
     
     def lev_adap(self, Pt, Pr):
         LevCorr = self.Lev_Corr(Pt, Pr)
@@ -1124,7 +1126,7 @@ class PEAQ(torch.nn.Module):
         N = 1.07664*((Eth/(s*(10**4)))**0.23)*(((1-s+(s*torch.transpose(E, 1,2))/Eth)**0.23)-1)
         return (25/N.shape[1])*torch.sum(torch.clamp(N, min=0), dim=2), Eth
     
-    def calc_MOV(self, t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep):
+    def calc_MOV(self, t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, tF, rF):
         # Need to calculate:
         #   WinModDiff1_B
         #   AvgModDiff1_B
@@ -1153,6 +1155,9 @@ class PEAQ(torch.nn.Module):
         # may not be completely correct, returns fband dependent result
 
         #Bandwidth
+        bwt, bwr = self.BWidth(tF, rF)
+        BandWidthRef_B = self.batchmeanmin1(bwr, gr=346)
+        BandWidthTest_B = self.batchmeanmin1(bwt, con=bwr, gr=346)
 
         return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B
 
@@ -1164,6 +1169,19 @@ class PEAQ(torch.nn.Module):
             w=1
         md = w*torch.abs(xt-xr)/(offset+xr)
         return 100*torch.sum(md, dim=1)/xt.shape[1]
+
+    def BWidth(self, FLTst, FLRef):
+        print('BWidth WIP')
+        
+        ZeroThreshold = FLTst[:,:,921:].max(dim=2).values
+        BWRef = torch.empty(FLTst.shape[0::2])
+        BWTst = torch.empty(FLTst.shape[0::2])
+        for n in range(FLRef.shape[1]):
+            nzs = (FLRef[:,n,:921].transpose(0,1)>=10+ZeroThreshold[:,n]).nonzero()
+            for b in range(FLRef.shape[0]):
+                BWRef[b,n] = torch.max(nzs[nzs[:,1]==b])+1
+                BWTst[b,n] = torch.max((FLTst[b,n,:int(BWRef[b,n])]>=5+ZeroThreshold[b,n]).nonzero())+1
+        return BWTst, BWRef
 
     def AvgX(self, x, W=None):
         if W==None:
@@ -1187,6 +1205,17 @@ class PEAQ(torch.nn.Module):
             WA += (torch.sum(torch.sqrt(x[:, i-2:i+1]), dim=1)/4)**4
         return torch.sqrt(WA/(x.shape[1]-3))
         
+    def batchmeanmin1(self, x, con=None, gr=None):
+        '''
+        Assumes first dim to be batch
+        '''
+        if con==None:
+            con = x
+        mn = torch.empty(x.shape[0])
+        for i in range(x.shape[0]):
+            mn[i] = torch.mean(x[i,con[i,:]>gr])
+        return mn
+
 class PEMOQ(torch.nn.Module):
     def __init__(self):
         super(PEMOQ, self).__init__()
@@ -1323,5 +1352,8 @@ class ViSQOLoss(torch.nn.Module):
 
 if __name__=="__main__":
     peaq = PEAQ()
-    sig = torch.randn((1,10000), dtype=torch.double)
-    print(peaq(sig, torch.sign(sig)*torch.abs(sig)**(1/2)))
+    #sig = torch.randn((2,10000), dtype=torch.double)
+    sig, fs = torchaudio.load('sample.wav')
+    sig = sig.repeat(2,1)
+    dsig = torch.sgn(sig)*torch.sqrt(torch.abs(sig))
+    print(peaq(sig, dsig))
