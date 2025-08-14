@@ -1159,9 +1159,12 @@ class PEAQ(torch.nn.Module):
         BandWidthRef_B = self.batchmeanmin1(bwr, gr=346)
         BandWidthTest_B = self.batchmeanmin1(bwt, con=bwr, gr=346)
 
-        NMR_B = 10*torch.log10(torch.sum(torch.sum(Pnoise/Mask, dim=2)/Pnoise.shape[2], dim=1)/Pnoise.shape[1])
+        PoverM = Pnoise/Mask
+        NMR_B = 10*torch.log10(torch.sum(torch.sum(PoverM, dim=2)/Pnoise.shape[2], dim=1)/Pnoise.shape[1])
 
-        return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B, BandWidthRef_B, BandWidthTest_B, NMR_B
+        RelDistFrames_B = self.RDF(10*torch.log10(PoverM))
+
+        return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B, BandWidthRef_B, BandWidthTest_B, NMR_B, RelDistFrames_B
 
     def ModDiff(self, xt, xr, negWt, offset):
         if negWt != 1:
@@ -1184,6 +1187,13 @@ class PEAQ(torch.nn.Module):
                 BWRef[b,n] = torch.max(nzs[nzs[:,1]==b])+1
                 BWTst[b,n] = torch.max((FLTst[b,n,:int(BWRef[b,n])]>=5+ZeroThreshold[b,n]).nonzero())+1
         return BWTst, BWRef
+
+    def RDF(self, x):
+        xm = x.max(dim=2).values
+        rdf = torch.empty(x.shape[0])
+        for b in range(x.shape[0]):
+            rdf[b] = xm[b,xm[b,:]>=1.5].shape[0]
+        return rdf
 
     def AvgX(self, x, W=None):
         if W==None:
