@@ -147,7 +147,7 @@ class PEAQ(torch.nn.Module):
         #t_epa = self.calc_adap(t_ep)
         #r_epa = self.calc_adap(r_ep)
 
-        MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(t_sp)), 20*torch.log10(torch.abs(r_sp)))
+        MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(t_sp)), 20*torch.log10(torch.abs(r_sp)), np, r_msk.transpose(1,2))
 
 
 
@@ -1126,7 +1126,7 @@ class PEAQ(torch.nn.Module):
         N = 1.07664*((Eth/(s*(10**4)))**0.23)*(((1-s+(s*torch.transpose(E, 1,2))/Eth)**0.23)-1)
         return (25/N.shape[1])*torch.sum(torch.clamp(N, min=0), dim=2), Eth
     
-    def calc_MOV(self, t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, tF, rF):
+    def calc_MOV(self, t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, tF, rF, Pnoise, Mask):
         # Need to calculate:
         #   WinModDiff1_B
         #   AvgModDiff1_B
@@ -1159,7 +1159,9 @@ class PEAQ(torch.nn.Module):
         BandWidthRef_B = self.batchmeanmin1(bwr, gr=346)
         BandWidthTest_B = self.batchmeanmin1(bwt, con=bwr, gr=346)
 
-        return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B
+        NMR_B = 10*torch.log10(torch.sum(torch.sum(Pnoise/Mask, dim=2)/Pnoise.shape[2], dim=1)/Pnoise.shape[1])
+
+        return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B, BandWidthRef_B, BandWidthTest_B, NMR_B
 
     def ModDiff(self, xt, xr, negWt, offset):
         if negWt != 1:
