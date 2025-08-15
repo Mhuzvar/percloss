@@ -147,7 +147,7 @@ class PEAQ(torch.nn.Module):
         #t_epa = self.calc_adap(t_ep)
         #r_epa = self.calc_adap(r_ep)
 
-        MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(t_sp)), 20*torch.log10(torch.abs(r_sp)), np, r_msk.transpose(1,2))
+        MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(t_sp)), 20*torch.log10(torch.abs(r_sp)), np, r_msk.transpose(1,2), t_ep, r_ep)
 
 
 
@@ -1126,7 +1126,7 @@ class PEAQ(torch.nn.Module):
         N = 1.07664*((Eth/(s*(10**4)))**0.23)*(((1-s+(s*torch.transpose(E, 1,2))/Eth)**0.23)-1)
         return (25/N.shape[1])*torch.sum(torch.clamp(N, min=0), dim=2), Eth
     
-    def calc_MOV(self, t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, tF, rF, Pnoise, Mask):
+    def calc_MOV(self, t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, tF, rF, Pnoise, Mask, t_ep, r_ep):
         # Need to calculate:
         #   WinModDiff1_B
         #   AvgModDiff1_B
@@ -1164,7 +1164,9 @@ class PEAQ(torch.nn.Module):
 
         RelDistFrames_B = self.RDF(10*torch.log10(PoverM))
 
-        return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B, BandWidthRef_B, BandWidthTest_B, NMR_B, RelDistFrames_B
+        MFPD_B, ADB_B = self.mfpd_adb(10*torch.log10(t_ep), 10*torch.log10(r_ep))
+
+        return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B, BandWidthRef_B, BandWidthTest_B, NMR_B, RelDistFrames_B, MFPD_B, ADB_B
 
     def ModDiff(self, xt, xr, negWt, offset):
         if negWt != 1:
@@ -1194,6 +1196,44 @@ class PEAQ(torch.nn.Module):
         for b in range(x.shape[0]):
             rdf[b] = xm[b,xm[b,:]>=1.5].shape[0]
         return rdf
+
+    def mfpd_adb(self, tE, rE):
+        Lkn = 0.3*torch.maximum(rE,tE)+0.7*tE
+        s = 1e30*torch.ones(Lkn.shape, dtype=torch.double)
+        s[Lkn>0] = 5.95072*((6.39468/Lkn[Lkn>0])**1.71332)+(9.01033e-11)*(Lkn[Lkn>0]**4)+(5.05622e-6)*(Lkn[Lkn>0]**3)-0.00102438*(Lkn[Lkn>0]**2)+0.0550197*Lkn[Lkn>0]-0.198719
+        e = rE-tE
+        a = (10**(-0.5213902276543247/(6-2*(e>0).short())))/s
+        pc = 1-10**(-a*(torch.pow(e,(6-2*(e>0).short()))))
+        qc = torch.abs(e.long())/s          # this is likely wrong
+        print('qc calculation may be wrong')
+        Pc = 1-torch.prod(1-pc, dim=1)
+        Qc = torch.sum(qc, dim=1)
+
+        Pc_curl = torch.empty(Pc.shape)
+        Pc_curl[0] = 0
+        c0 = 0.9**(941/1881)            # should be ~equal to step_size/nfft
+        #c1 = 0.99**(941/1881)
+        c1 = 1                          # page 63, idk man
+        PMc = torch.zeros(Pc_curl.shape[0], 2)
+        for i in range(1,Pc_curl.shape[1]):
+            Pc_curl[:,i] = (1-c0)*Pc[:,i]+c0*Pc_curl[:,i-1]
+            PMc[:,1] = torch.maximum(c1*Pc_curl[:,i], PMc[:,0])
+            PMc[:,0] = PMc[:,1]
+        MFPD = PMc[:,-1]
+        Qsum = torch.sum(Qc, dim=1)
+        ADB = torch.empty(Qsum.shape[0])
+        for i in range(Qsum.shape[0]):
+            if (Pc[i,Pc[i,:]>0.5]).shape[0] > 0: # ndist
+                if Qsum[i] > 0:
+                    ADB[i] = np.log10(Qsum[i]/(Pc[i,Pc[i,:]>0.5]).shape[0])
+                else:
+                    ADB[i] = -0.5
+            else:
+                ADB[i] = 0
+
+        return MFPD, ADB
+            
+        
 
     def AvgX(self, x, W=None):
         if W==None:
