@@ -147,7 +147,7 @@ class PEAQ(torch.nn.Module):
         #t_epa = self.calc_adap(t_ep)
         #r_epa = self.calc_adap(r_ep)
 
-        MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(t_sp)), 20*torch.log10(torch.abs(r_sp)), np, r_msk.transpose(1,2), t_ep, r_ep)
+        MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(t_sp)), 20*torch.log10(torch.abs(r_sp)), np, r_msk.transpose(1,2), t_ep, r_ep, torch.abs(torch.abs(r_sp)-torch.abs(t_sp)))
 
 
 
@@ -1126,7 +1126,7 @@ class PEAQ(torch.nn.Module):
         N = 1.07664*((Eth/(s*(10**4)))**0.23)*(((1-s+(s*torch.transpose(E, 1,2))/Eth)**0.23)-1)
         return (25/N.shape[1])*torch.sum(torch.clamp(N, min=0), dim=2), Eth
     
-    def calc_MOV(self, t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, tF, rF, Pnoise, Mask, t_ep, r_ep):
+    def calc_MOV(self, t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, tF, rF, Pnoise, Mask, t_ep, r_ep, F0):
         # Need to calculate:
         #   WinModDiff1_B
         #   AvgModDiff1_B
@@ -1165,6 +1165,8 @@ class PEAQ(torch.nn.Module):
         RelDistFrames_B = self.RDF(10*torch.log10(PoverM))
 
         MFPD_B, ADB_B = self.mfpd_adb(10*torch.log10(t_ep), 10*torch.log10(r_ep))
+
+        EHS_B = self.ehs(F0)
 
         return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B, BandWidthRef_B, BandWidthTest_B, NMR_B, RelDistFrames_B, MFPD_B, ADB_B
 
@@ -1233,7 +1235,22 @@ class PEAQ(torch.nn.Module):
 
         return MFPD, ADB
             
-        
+    def ehs(self, x):
+        print('WIP')
+        fc = wf.f_c()
+        maxlag = 2**torch.floor(torch.log2((fc/22050)*941))
+
+        ehs = torch.empty(x.shape[0], 109)
+        for band in range(109):
+            C = torch.zeros(x.shape[0], maxlag[band])
+            for lag in range(maxlag[band]):
+                x_t = torch.cat(torch.zeros(x.shape[0], lag), x[:,:maxlag[band]-lag], dim=1)
+                C[lag] = (x*x_t)/(torch.abs(x)*torch.abs(x_t))
+            C = C*torch.hann_window(maxlag[band])
+            C = C-torch.mean(C, dim=1)
+            C_ft = 20*torch.log10(torch.abs(torch.fft.rfft(C, dim=1, norm='forward')))
+            ehs[:, band] = self.ehs_peak(C_ft)
+
 
     def AvgX(self, x, W=None):
         if W==None:
@@ -1267,6 +1284,20 @@ class PEAQ(torch.nn.Module):
         for i in range(x.shape[0]):
             mn[i] = torch.mean(x[i,con[i,:]>gr])
         return mn
+
+    def ehs_peak(self, x):
+        print('WIP, copied from torch forum!')
+        peak_mask = torch.cat([torch.zeros((x.shape[0],1), dtype=torch.uint8).bool(), (x[:, :-2]<x[:, 1:-1]) & (x[:, 2:]<x[:, 1:-1]), torch.zeros((x.shape[0],1), dtype=torch.uint8).bool()], dim=1)
+        #peak_mask = peak_mask & (a[:] > 0.1)
+        b = torch.nn.functional.max_pool1d_with_indices(x.unsqueeze(1), width, 1, padding=width//2)[1].squeeze(1)
+
+        sets = []
+        for i in range(0, x.shape[0]):
+            bi = b[i,:].unique()
+            bi = bi[peak_mask[i,bi].nonzero()]
+            #sets.append(bi.flatten().tolist())
+            sets.append(bi)
+
 
 class PEMOQ(torch.nn.Module):
     def __init__(self):
