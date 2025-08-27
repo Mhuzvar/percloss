@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="129mm"
+   height="59mm"
+   viewBox="0 0 129 59"
+   version="1.1"
+   id="svg5"
+   inkscape:version="1.2.2 (b0a8486541, 2022-12-01)"
+   sodipodi:docname="rnn.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview7"
+     pagecolor="#ffffff"
+     bordercolor="#999999"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     showgrid="false"
+     showguides="true"
+     inkscape:zoom="2.8284271"
+     inkscape:cx="158.74547"
+     inkscape:cy="61.164736"
+     inkscape:window-width="3840"
+     inkscape:window-height="2132"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs2">
+    <marker
+       style="overflow:visible"
+       id="marker8919"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Arrow1L"
+       markerWidth="8.75"
+       markerHeight="5"
+       viewBox="0 0 8.75 5"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         style="fill:context-stroke;fill-rule:evenodd;stroke:none"
+         d="M 0,0 5,-5 -12.5,0 5,5 Z"
+         id="path8917"
+         transform="scale(-0.5)" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="marker8083"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Arrow1L"
+       markerWidth="8.75"
+       markerHeight="5"
+       viewBox="0 0 8.75 5"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         style="fill:context-stroke;fill-rule:evenodd;stroke:none"
+         d="M 0,0 5,-5 -12.5,0 5,5 Z"
+         id="path8081"
+         transform="scale(-0.5)" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Arrow1L"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Arrow1L"
+       markerWidth="8.75"
+       markerHeight="5"
+       viewBox="0 0 8.75 5"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         style="fill:context-stroke;fill-rule:evenodd;stroke:none"
+         d="M 0,0 5,-5 -12.5,0 5,5 Z"
+         id="arrow1L"
+         transform="scale(-0.5)" />
+    </marker>
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <ellipse
+       style="fill:none;stroke:#000000;stroke-width:0.499911;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none"
+       id="path788"
+       cx="9.5"
+       cy="42"
+       rx="7.2500448"
+       ry="7.2500443" />
+    <rect
+       style="fill:none;stroke:#000000;stroke-width:0.611538;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none"
+       id="rect950"
+       width="29.388462"
+       height="14.388462"
+       x="27.305767"
+       y="34.805767" />
+    <circle
+       style="fill:none;stroke:#000000;stroke-width:0.499737;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none"
+       id="path1678"
+       cx="72"
+       cy="42"
+       r="4.7501316" />
+    <rect
+       style="fill:none;stroke:#000000;stroke-width:0.499862;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none"
+       id="rect3136"
+       width="14.500137"
+       height="14.500138"
+       x="87.249931"
+       y="34.749931" />
+    <path
+       style="fill:none;stroke:#000000;stroke-width:0.499999;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none"
+       d="m 67.490976,41.999284 h 9.021672"
+       id="path3192" />
+    <path
+       style="fill:none;stroke:#000000;stroke-width:0.499999;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none"
+       d="M 71.999227,37.488965 V 46.52337"
+       id="path3194" />
+    <text
+       xml:space="preserve"
+       style="font-size:7.05556px;font-family:KaTeX_Math;-inkscape-font-specification:KaTeX_Math;text-align:center;text-anchor:middle;fill:none;stroke:#000000;stroke-width:0.499999;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none"
+       x="9.5599194"
+       y="43.566113"
+       id="text3978"><tspan
+         sodipodi:role="line"
+         id="tspan3976"
+         style="font-style:italic;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Bold Italic';fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.5"
+         x="9.5599194"
+         y="43.566113">x<tspan
+   style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Main;-inkscape-font-specification:KaTeX_Main"
+   id="tspan5542">[<tspan
+   style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:KaTeX_Math"
+   id="tspan18359">t</tspan>]</tspan></tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.05556px;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Italic';text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.499999;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none"
+       x="41.866333"
+       y="43.345669"
+       id="text4032"><tspan
+         sodipodi:role="line"
+         id="tspan4030"
+         style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Italic';baseline-shift:baseline;stroke-width:0.5"
+         x="41.866333"
+         y="43.345669"><tspan
+           style="font-style:italic;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Bold Italic'"
+           id="tspan14411">Wx</tspan><tspan
+           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Main;-inkscape-font-specification:KaTeX_Main"
+           id="tspan18363">[<tspan
+   style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:KaTeX_Math"
+   id="tspan18365">t</tspan>]</tspan></tspan></text>
+    <rect
+       style="fill:none;stroke:#000000;stroke-width:0.611538;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none"
+       id="rect5514"
+       width="29.388462"
+       height="14.388462"
+       x="27.305767"
+       y="14.805769" />
+    <text
+       xml:space="preserve"
+       style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.05556px;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Italic';text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.499999;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none"
+       x="41.866333"
+       y="23.345671"
+       id="text5522"><tspan
+         sodipodi:role="line"
+         id="tspan5520"
+         style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Italic';baseline-shift:baseline;stroke-width:0.5"
+         x="41.866333"
+         y="23.345671"><tspan
+   style="font-style:italic;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Bold Italic'"
+   id="tspan14409">Uy</tspan><tspan
+   style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Main;-inkscape-font-specification:KaTeX_Main"
+   id="tspan18353">[</tspan>t-1<tspan
+   style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Main;-inkscape-font-specification:KaTeX_Main"
+   id="tspan18357">]</tspan></tspan></text>
+    <path
+       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
+       d="m 16.969629,41.999284 h 8.479068"
+       id="path5544"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
+       d="m 56.97,41.999284 h 8.479068"
+       id="path5851"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
+       d="m 76.97,41.999284 h 8.479068"
+       id="path5855"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
+       d="m 101.97,41.999284 h 8.47907"
+       id="path5859"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#marker8083)"
+       d="M 56.97649,21.998438 H 71.998827 V 35.46945"
+       id="path8079"
+       sodipodi:nodetypes="ccc" />
+    <text
+       xml:space="preserve"
+       style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.05556px;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Italic';text-align:center;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
+       x="94.53537"
+       y="43.96167"
+       id="text8869"><tspan
+         sodipodi:role="line"
+         id="tspan8867"
+         style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.25"
+         x="94.53537"
+         y="43.96167">σ<tspan
+   style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Main;-inkscape-font-specification:KaTeX_Main"
+   id="tspan18375">(<tspan
+   style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:KaTeX_Math"
+   id="tspan18377">.</tspan>)</tspan></tspan></text>
+    <ellipse
+       style="fill:none;stroke:#000000;stroke-width:0.499911;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none"
+       id="ellipse8899"
+       cx="119.5"
+       cy="42"
+       rx="7.2500448"
+       ry="7.2500443" />
+    <text
+       xml:space="preserve"
+       style="font-size:7.05556px;font-family:KaTeX_Math;-inkscape-font-specification:KaTeX_Math;text-align:center;text-anchor:middle;fill:none;stroke:#000000;stroke-width:0.499999;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none"
+       x="119.55992"
+       y="43.566113"
+       id="text8905"><tspan
+         sodipodi:role="line"
+         id="tspan8903"
+         style="font-style:italic;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Bold Italic';fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.5"
+         x="119.55992"
+         y="43.566113">y<tspan
+   style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Main;-inkscape-font-specification:KaTeX_Main"
+   id="tspan8901">[<tspan
+   style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:KaTeX_Math"
+   id="tspan18369">t</tspan>]</tspan></tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.05556px;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Italic';text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
+       x="60.605209"
+       y="57.016758"
+       id="text8913"><tspan
+         sodipodi:role="line"
+         id="tspan8911"
+         style="font-style:italic;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Bold Italic';stroke-width:0.25"
+         x="60.605209"
+         y="57.016758">b</tspan></text>
+    <path
+       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-start:url(#marker8919)"
+       d="m 71.998827,48.54967 v 6.478413 h -9.124852"
+       id="path8915"
+       sodipodi:nodetypes="ccc" />
+    <rect
+       style="fill:none;stroke:#000000;stroke-width:0.499862;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none"
+       id="rect11249"
+       width="14.500137"
+       height="14.500138"
+       x="112.24993"
+       y="2.2499311" />
+    <text
+       xml:space="preserve"
+       style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.05556px;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Italic';text-align:center;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
+       x="119.53537"
+       y="11.461669"
+       id="text11253"><tspan
+         sodipodi:role="line"
+         id="tspan11251"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:KaTeX_Math;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.25"
+         x="119.53537"
+         y="11.461669">D</tspan></text>
+    <path
+       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
+       d="M 119.50077,34.502913 V 18.558826"
+       id="path13541"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
+       d="M 112.00539,9.4997883 H 9.5022438 V 21.999283 H 25.483786"
+       id="path13547"
+       sodipodi:nodetypes="cccc" />
+    <text
+       xml:space="preserve"
+       style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.05556px;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Italic';text-align:center;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
+       x="93.924797"
+       y="15.809302"
+       id="text13557"><tspan
+         sodipodi:role="line"
+         id="tspan13555"
+         style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.25"
+         x="93.924797"
+         y="15.809302"><tspan
+           style="font-style:italic;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Bold Italic'"
+           id="tspan13559">y</tspan><tspan
+           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Main;-inkscape-font-specification:KaTeX_Main"
+           id="tspan18371">[<tspan
+   style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:KaTeX_Math"
+   id="tspan18373">t-1</tspan>]</tspan></tspan></text>
+  </g>
+</svg>
