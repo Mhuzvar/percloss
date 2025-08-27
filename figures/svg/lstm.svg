@@ -2,9 +2,9 @@
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
 
 <svg
-   width="219mm"
+   width="214mm"
    height="131.5mm"
-   viewBox="0 0 219 131.5"
+   viewBox="0 0 214 131.5"
    version="1.1"
    id="svg5"
    inkscape:version="1.2.2 (b0a8486541, 2022-12-01)"
@@ -27,8 +27,8 @@
      showgrid="false"
      showguides="true"
      inkscape:zoom="1"
-     inkscape:cx="326"
-     inkscape:cy="318"
+     inkscape:cx="181"
+     inkscape:cy="269"
      inkscape:window-width="1920"
      inkscape:window-height="1008"
      inkscape:window-x="0"
@@ -134,7 +134,7 @@
        inkscape:label=""
        inkscape:color="rgb(0,134,229)" />
     <sodipodi:guide
-       position="-31.882291,104"
+       position="229.74488,93.999999"
        orientation="0,1"
        id="guide24959"
        inkscape:locked="false"
@@ -155,7 +155,7 @@
        inkscape:label=""
        inkscape:color="rgb(0,134,229)" />
     <sodipodi:guide
-       position="187.5,199.78737"
+       position="167.5,134.11924"
        orientation="-1,0"
        id="guide28921"
        inkscape:locked="false"
@@ -165,6 +165,27 @@
        position="89.693747,73.999999"
        orientation="0,1"
        id="guide29787"
+       inkscape:locked="false"
+       inkscape:label=""
+       inkscape:color="rgb(0,134,229)" />
+    <sodipodi:guide
+       position="190.0039,47"
+       orientation="0,1"
+       id="guide32054"
+       inkscape:locked="false"
+       inkscape:label=""
+       inkscape:color="rgb(0,134,229)" />
+    <sodipodi:guide
+       position="185.50599,19.5"
+       orientation="0,1"
+       id="guide32056"
+       inkscape:locked="false"
+       inkscape:label=""
+       inkscape:color="rgb(0,134,229)" />
+    <sodipodi:guide
+       position="204.5,93.135416"
+       orientation="-1,0"
+       id="guide32916"
        inkscape:locked="false"
        inkscape:label=""
        inkscape:color="rgb(0,134,229)" />
@@ -237,12 +258,12 @@
          y="11.909446">D</tspan></text>
     <path
        style="fill:none;fill-opacity:1;stroke:#8c8c8c;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
-       d="M 209.49966,14.556795 V 9.499739 H 108.5402"
+       d="M 204.49965,14.556795 V 9.499739 h -95.94891"
        id="path29715"
        sodipodi:nodetypes="ccc" />
     <path
        style="fill:none;fill-opacity:1;stroke:#8c8c8c;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
-       d="M 209.49966,71.988947 V 121.99933 H 108.52851"
+       d="M 204.50465,71.988947 V 121.99933 H 108.53812"
        id="path30595"
        sodipodi:nodetypes="ccc" />
     <path
@@ -626,16 +647,16 @@
     <circle
        style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.499941;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
        id="circle17962"
-       cx="162"
+       cx="182"
        cy="84.5"
        r="4.7500296" />
     <path
        style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.499999;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
-       d="m 161.99918,79.985379 v 9.09092"
+       d="m 181.99918,79.985378 v 9.09092"
        id="path17964" />
     <path
        style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.499999;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
-       d="m 157.46715,84.499829 h 9.10799"
+       d="m 177.46715,84.499828 h 9.10799"
        id="path17966" />
     <path
        style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
@@ -655,32 +676,32 @@
        id="rect18736"
        width="14.500124"
        height="14.500124"
-       x="177.24994"
-       y="77.249939" />
+       x="174.74994"
+       y="59.749939" />
     <text
        xml:space="preserve"
        style="font-size:7.05556px;font-family:KaTeX_Math;-inkscape-font-specification:KaTeX_Math;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.499999;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
-       x="184.72598"
-       y="86.263672"
+       x="182.22598"
+       y="68.763664"
        id="text18742"><tspan
          sodipodi:role="line"
          id="tspan18740"
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Main;-inkscape-font-specification:KaTeX_Main;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.5"
-         x="184.72598"
-         y="86.263672"><tspan
+         x="182.22598"
+         y="68.763664"><tspan
    style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:KaTeX_Math"
    id="tspan18738">σ</tspan>(.)</tspan></text>
     <circle
        style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.499941;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
        id="circle18744"
-       cx="184.5"
-       cy="64.5"
+       cx="204.49998"
+       cy="47.434376"
        r="4.7500296" />
     <ellipse
        style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.481886;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
        id="ellipse18746"
-       cx="184.5"
-       cy="64.5"
+       cx="204.49998"
+       cy="47.434376"
        rx="1.2590568"
        ry="1.2590569" />
     <rect
@@ -688,38 +709,23 @@
        id="rect18748"
        width="24.499895"
        height="14.499896"
-       x="172.25005"
-       y="34.75005" />
+       x="155.25005"
+       y="30.250051" />
     <text
        xml:space="preserve"
        style="font-size:7.05556px;font-family:KaTeX_Math;-inkscape-font-specification:KaTeX_Math;text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.499999;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
-       x="184.57393"
-       y="43.961666"
+       x="167.57393"
+       y="39.46167"
        id="text18752"><tspan
          sodipodi:role="line"
          id="tspan18750"
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Main;-inkscape-font-specification:KaTeX_Main;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.5"
-         x="184.57393"
-         y="43.961666">tanh(.)</tspan></text>
+         x="167.57393"
+         y="39.46167">tanh(.)</tspan></text>
     <path
        style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
-       d="m 146.95878,21.999235 h 53.49234"
+       d="m 146.73077,21.999235 h 48.72157"
        id="path19496"
-       sodipodi:nodetypes="cc" />
-    <path
-       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
-       d="M 184.49993,21.999674 V 32.944417"
-       id="path19498"
-       sodipodi:nodetypes="cc" />
-    <path
-       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
-       d="M 184.49985,77.007762 V 71.0319"
-       id="path20246"
-       sodipodi:nodetypes="cc" />
-    <path
-       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
-       d="m 184.49993,49.484602 v 8.46014"
-       id="path20254"
        sodipodi:nodetypes="cc" />
     <path
        style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
@@ -817,24 +823,24 @@
        id="rect21827"
        width="14.499998"
        height="14.499862"
-       x="154.75"
+       x="157.25"
        y="104.75" />
     <text
        xml:space="preserve"
        style="font-style:italic;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:7.05556px;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Bold Italic';text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
-       x="161.64708"
+       x="164.14708"
        y="114.96793"
        id="text21833"><tspan
          sodipodi:role="line"
          id="tspan21831"
          style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.25"
-         x="161.64708"
+         x="164.14708"
          y="114.96793">W<tspan
    style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:65%;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Italic';baseline-shift:super"
    id="tspan21835">o</tspan></tspan></text>
     <path
        style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
-       d="M 36.819128,111.99994 H 152.97576"
+       d="M 36.711641,111.99994 H 155.44796"
        id="path22577"
        sodipodi:nodetypes="cc" />
     <path
@@ -851,16 +857,6 @@
        style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
        d="m 141.999,111.93896 v -5.89938"
        id="path22593"
-       sodipodi:nodetypes="cc" />
-    <path
-       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
-       d="M 161.99993,104.51099 V 91.041216"
-       id="path22597"
-       sodipodi:nodetypes="cc" />
-    <path
-       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
-       d="m 166.95674,84.499812 h 8.48786"
-       id="path23345"
        sodipodi:nodetypes="cc" />
     <ellipse
        style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.499767;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
@@ -889,20 +885,20 @@
     <ellipse
        style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.499767;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
        id="ellipse23367"
-       cx="209.5"
+       cx="204.49998"
        cy="64.5"
        rx="7.2501168"
        ry="7.2501163" />
     <text
        xml:space="preserve"
        style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.05556px;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Italic';text-align:center;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.499999;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
-       x="209.7679"
+       x="204.76788"
        y="66.263672"
        id="text23377"><tspan
          sodipodi:role="line"
          id="tspan23375"
          style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.5"
-         x="209.7679"
+         x="204.76788"
          y="66.263672"><tspan
    style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Main;-inkscape-font-specification:KaTeX_Main"
    id="tspan23371"><tspan
@@ -913,20 +909,20 @@
     <ellipse
        style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.499767;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
        id="ellipse24121"
-       cx="209.5"
+       cx="204.49998"
        cy="21.999998"
        rx="7.2501168"
        ry="7.2501163" />
     <text
        xml:space="preserve"
        style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.05556px;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Italic';text-align:center;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.499999;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
-       x="209.7679"
+       x="204.76788"
        y="23.76367"
        id="text24131"><tspan
          sodipodi:role="line"
          id="tspan24129"
          style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.5"
-         x="209.7679"
+         x="204.76788"
          y="23.76367"><tspan
    style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Main;-inkscape-font-specification:KaTeX_Main"
    id="tspan24125"><tspan
@@ -934,11 +930,6 @@
    id="tspan24133">c</tspan>[</tspan>t<tspan
    style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Main;-inkscape-font-specification:KaTeX_Main"
    id="tspan24127">]</tspan></tspan></text>
-    <path
-       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
-       d="m 189.48552,64.499999 h 10.97271"
-       id="path24885"
-       sodipodi:nodetypes="cc" />
     <ellipse
        style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.500104;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
        id="ellipse24903"
@@ -1014,5 +1005,80 @@
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:KaTeX_Math;fill:#8c8c8c;fill-opacity:1;stroke:none;stroke-width:0.5;stroke-opacity:1"
          x="99.467697"
          y="124.40945">D</tspan></text>
+    <rect
+       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.500002;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
+       id="rect31937"
+       width="14.499998"
+       height="14.499862"
+       x="157.25"
+       y="77.25" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.05559px;font-family:KaTeX_Math;-inkscape-font-specification:KaTeX_Math;text-align:center;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.500001;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
+       x="164.51004"
+       y="87.450348"
+       id="text31945"><tspan
+         sodipodi:role="line"
+         id="tspan31943"
+         style="font-style:italic;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Bold Italic';fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.500002"
+         x="164.51004"
+         y="87.450348">U<tspan
+   style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:65%;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Italic';baseline-shift:super"
+   id="tspan32052">o</tspan></tspan></text>
+    <path
+       style="fill:none;fill-opacity:1;stroke:#030303;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
+       d="m 171.97916,111.99936 h 10.02006 V 91.046218"
+       id="path32058"
+       sodipodi:nodetypes="ccc" />
+    <path
+       style="fill:none;fill-opacity:1;stroke:#030303;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
+       d="M 181.99955,79.530029 V 76.045695"
+       id="path35140"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:none;fill-opacity:1;stroke:#030303;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
+       d="M 181.99955,59.512646 V 47.499941 h 15.98021"
+       id="path35146"
+       sodipodi:nodetypes="ccc" />
+    <path
+       style="fill:none;fill-opacity:1;stroke:#030303;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
+       d="m 204.49947,52.355461 v 3.088675"
+       id="path35152"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:none;fill-opacity:1;stroke:#030303;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
+       d="m 167.49985,22.089607 v 6.369637"
+       id="path36642"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:none;fill-opacity:1;stroke:#030303;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
+       d="m 179.94664,37.49952 h 24.55147 v 3.402739"
+       id="path36648"
+       sodipodi:nodetypes="ccc" />
+    <path
+       style="fill:none;fill-opacity:1;stroke:#030303;stroke-width:0.25;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
+       d="m 171.96263,84.499235 h 3.48854"
+       id="path36654"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.05556px;font-family:KaTeX_Math;-inkscape-font-specification:KaTeX_Math;text-align:center;text-anchor:middle;fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1"
+       x="191.35637"
+       y="94.131485"
+       id="text36672"><tspan
+         sodipodi:role="line"
+         id="tspan36670"
+         style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.25"
+         x="191.35637"
+         y="94.131485"><tspan
+           style="font-style:italic;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Bold Italic'"
+           id="tspan36666">b</tspan><tspan
+           id="tspan36782"
+           style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:65%;font-family:KaTeX_Math;-inkscape-font-specification:'KaTeX_Math Italic';baseline-shift:super">o</tspan></tspan></text>
+    <path
+       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.25;stroke-linejoin:round;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1L)"
+       d="M 191.99922,88.346827 V 84.499 h -3.44372"
+       id="path36674"
+       sodipodi:nodetypes="ccc" />
   </g>
 </svg>
