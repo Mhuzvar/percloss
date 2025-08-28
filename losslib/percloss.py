@@ -9,7 +9,7 @@ except:
 class MSeE(torch.nn.Module):
     def __init__(self, mode=0, N=2047):
         super(MSeE, self).__init__()
-        if mode in range(3):
+        if mode in range(5):
             self.mode=mode
         else:
             raise ValueError(f"Invalid loss type {mode}.")
@@ -19,11 +19,19 @@ class MSeE(torch.nn.Module):
                 self.a=torch.tensor([1, 0])
                 self.b=torch.tensor([1, -0.85])
             case 1:
+                # a simple first order pre-emphasis (simple low pass)
+                self.a=torch.tensor([1, 0,])
+                self.b=torch.tensor([1, 0.85])
+            case 2:
+                # folded differentiator
+                self.a=torch.tensor([1, 0, 0])
+                self.b=torch.tensor([1, 0, -0.85])
+            case 3:
                 # closer to A-weight
                 # taken from a pdf online, but likely not very usable
                 self.a=torch.tensor([1, -1.31861375911, 0.32059452332])
                 self.b=torch.tensor([0.95616638497, -1.31960414122, 0.36343775625])
-            case 2:
+            case 4:
                 # outer and middle ear
                 # can be made by approximation of the weighting function in ITU_T BS.1387 pg. 35
                 a=np.zeros(N)
@@ -1287,10 +1295,19 @@ class PEAQ(torch.nn.Module):
 
     def ehs_peak(self, x):
         print('WIP, copied from torch forum!')
+        # getting short signals out of the way
+        if x.shape[1]<4:
+            return torch.max(x,dim=1)
+        if x.shape[1]<16:
+            return torch.max(x[:,1:],dim=1)
+        
+        # detecting peaks for reasonable length signals (16 or more samples)
+        width = 15
         peak_mask = torch.cat([torch.zeros((x.shape[0],1), dtype=torch.uint8).bool(), (x[:, :-2]<x[:, 1:-1]) & (x[:, 2:]<x[:, 1:-1]), torch.zeros((x.shape[0],1), dtype=torch.uint8).bool()], dim=1)
         #peak_mask = peak_mask & (a[:] > 0.1)
         b = torch.nn.functional.max_pool1d_with_indices(x.unsqueeze(1), width, 1, padding=width//2)[1].squeeze(1)
-
+            # find what this does exactly
+        
         sets = []
         for i in range(0, x.shape[0]):
             bi = b[i,:].unique()
