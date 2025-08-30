@@ -6,9 +6,9 @@ try:
 except:
     import wfilters as wf
 
-class MSeE(torch.nn.Module):
+class PreemLossParent(torch.nn.Module):
     def __init__(self, mode=0, N=2047):
-        super(MSeE, self).__init__()
+        super().__init__()
         if mode in range(5):
             self.mode=mode
         else:
@@ -19,50 +19,65 @@ class MSeE(torch.nn.Module):
                 self.a=torch.tensor([1, 0])
                 self.b=torch.tensor([1, -0.85])
             case 1:
-                # a simple first order pre-emphasis (simple low pass)
-                self.a=torch.tensor([1, 0,])
-                self.b=torch.tensor([1, 0.85])
-            case 2:
                 # folded differentiator
                 self.a=torch.tensor([1, 0, 0])
                 self.b=torch.tensor([1, 0, -0.85])
+            case 2:
+                # FIR approximation of A-curve plus a simple low pass
+                # original paper used N=100
+                self.a=torch.zeros(N+1)
+                self.a[0]=1
+                self.b = torch.from_numpy(np.convolve([1, 0.85], wf.Acurve(N))).type(torch.float)
             case 3:
-                # closer to A-weight
-                # taken from a pdf online, but likely not very usable
+                # IIR A-weight, taken from a pdf online
                 self.a=torch.tensor([1, -1.31861375911, 0.32059452332])
                 self.b=torch.tensor([0.95616638497, -1.31960414122, 0.36343775625])
             case 4:
                 # outer and middle ear
-                # can be made by approximation of the weighting function in ITU_T BS.1387 pg. 35
-                a=np.zeros(N)
-                a[0]=1
-                self.a=torch.from_numpy(a).type(torch.float)
-                self.b=torch.from_numpy(wf.Acurve(N=N)).type(torch.float)
+                # approximation of the weighting function in ITU_T BS.1387 pg. 35
+                self.a=torch.zeros(N)
+                self.a[0]=1
+                self.b=torch.from_numpy(wf.BS1387curve(N=N)).type(torch.float)
             case _:
                 raise ValueError(f"Invalid loss type {self.mode}.")
-
-    def forward(self, predictions, targets):
-        """
-        Args:
-            predictions (torch.Tensor): The model's predictions.
-            targets (torch.Tensor): The ground truth labels or targets.
-
-        Returns:
-            torch.Tensor: The computed MSeE loss value.
-        """
-        predictions = self.preem(predictions)
-        targets = self.preem(targets)
-        
-        return torch.mean((predictions - targets)**2)
     
     def preem(self, x):
         #x = torch.nn.functional.conv1d(x.unsqueeze(1), kernel, padding=1).squeeze(1)
         x=torchaudio.functional.filtfilt(x,self.a,self.b,clamp=True) # time must be the last dim of x
         return x
 
+class MSeE(PreemLossParent):
+    def __init__(self, mode=0, N=2047):
+        super().__init__(mode, N)
+
+    def forward(self, predictions, targets):
+        predictions = self.preem(predictions)
+        targets = self.preem(targets)
+        
+        return torch.mean((predictions - targets)**2)
+
+class eESR(PreemLossParent):
+    def __init__(self, mode=0, N=2047):
+        super().__init__(mode, N)
+    
+    def forward(self,predictions,targets):
+        predictions = self.preem(predictions)
+        targets = self.preem(targets)
+
+        return torch.sum(torch.abs(targets-predictions)**2)/torch.sum(torch.abs(targets)**2)
+
+class eESR_DC(eESR):
+    def __init__(self, mode=0, N=2047):
+        super().__init__(mode, N)
+
+    def forward(self, predictions, targets):
+        DC = (torch.mean(targets-predictions)**2)/torch.mean(targets**2)
+        ESR = super().forward(predictions,targets)
+        return ESR+DC
+
 class cepdist(torch.nn.Module):
     def __init__(self, mode='linear', wlen=128, wstep=64, fs=44100, p=2.0):
-        super(cepdist, self).__init__()
+        super().__init__()
         if mode in ['linear', 'mel', 'plp']:
             self.mode=['linear', 'mel', 'plp'].index(mode)
         else:
@@ -125,7 +140,7 @@ class cepdist(torch.nn.Module):
 
 class PEAQ(torch.nn.Module):
     def __init__(self):
-        super(PEAQ, self).__init__()
+        super().__init__()
     
     def forward(self, predictions, targets):
         # come up with a playback level estimation
@@ -1315,10 +1330,9 @@ class PEAQ(torch.nn.Module):
             #sets.append(bi.flatten().tolist())
             sets.append(bi)
 
-
 class PEMOQ(torch.nn.Module):
     def __init__(self):
-        super(PEMOQ, self).__init__()
+        super().__init__()
 
     def forward(self, predictions, targets):
         """
@@ -1390,7 +1404,7 @@ class PEMOQ(torch.nn.Module):
 
 class ViSQOLoss(torch.nn.Module):
     def __init__(self):
-        super(ViSQOLoss, self).__init__()
+        super().__init__()
 
     def forward(self, predictions, targets):
         """

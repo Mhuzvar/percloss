@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import scipy
 import torch
 
-def Acurve(N=63, fs=44100, mode=0):
+def BS1387curve(N=63, fs=44100, mode=0):
     """
     magnitude response usable in frequency sampling method for FIR filter design.
     arguments:
@@ -350,6 +350,9 @@ def f_c():
         f_c[i] = float(line.split(' ')[2])
 
     return f_c
+
+def Acurve(N):
+    print('WIP')
 
 if __name__=="__main__":
     #for i in range(8, 12):
