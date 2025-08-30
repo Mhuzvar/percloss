@@ -3,14 +3,15 @@ import matplotlib.pyplot as plt
 import scipy
 import torch
 
-def BS1387curve(N=63, fs=44100, mode=0):
+def Wcurve(N=63, fs=44100, mode=0):
     """
     magnitude response usable in frequency sampling method for FIR filter design.
     arguments:
         nvals       ...output vector length
         fs          ...sampling frequency
         mode        ...response definition
-                            0   ..ITU-R BS.468-4
+                            0   ..A-curve
+                            1   ..ITU-R BS.468-4
     outputs:
         vector of magnitudes
     """
@@ -23,10 +24,19 @@ def BS1387curve(N=63, fs=44100, mode=0):
     
     match mode:
         case 0:
-            fd = (31.5, 63, 100, 200, 400, 800, 1000, 2000, 3150, 4000, 5000,
-                  6300, 7100, 8000, 9000, 10000, 12500, 14000, 16000, 20000, 31500)
-            rd = (-29.9, -23.9, -19.8, -13.8, -7.8, -1.9, 0, 5.6, 9, 10.5, 11.7,
-                  12.2, 12, 11.4, 10.1, 8.1, 0, -5.3, -11.7, -22.2, -42.7)
+            fd=np.linspace(0,fs//2,100*N)
+            Ra = ((12194**2)*(fd**4))/(((fd**2)+(20.6**2))*np.sqrt(((fd**2)+(107.7**2))*((fd**2)+(737.9**2)))*((fd**2)+(12194**2)))
+            rd=20*np.log10(Ra)+2
+            print(fd[:5])
+            print(rd[:5]-rd[1:6])
+            supplement_epsilon=False
+        case 1:
+            fd = np.asarray([31.5, 63, 100, 200, 400, 800, 1000, 2000, 3150, 4000, 5000,
+                  6300, 7100, 8000, 9000, 10000, 12500, 14000, 16000, 20000, 31500])
+            rd = np.asarray([-29.9, -23.9, -19.8, -13.8, -7.8, -1.9, 0, 5.6, 9, 10.5, 11.7,
+                  12.2, 12, 11.4, 10.1, 8.1, 0, -5.3, -11.7, -22.2, -42.7])
+            supplement_epsilon=True
+            epsilon = [30,600]
         case _:
             raise Exception(f"Wrong mode '{mode}' provided!")
     M = (N-1)//2    
@@ -34,10 +44,11 @@ def BS1387curve(N=63, fs=44100, mode=0):
     fn = np.linspace(0,fs//2,M+1)
     fnlog = np.log10(fn[1:])
     
-    fdlog = np.log10(np.asarray(fd))
-    fdlog = np.insert(fdlog, 0, fdlog[0]-30)
-    rdmod = np.insert(np.asarray(rd), 0, rd[0]-600)
-    rnlog = np.interp(fnlog, fdlog, rdmod)
+    fdlog = np.log10(fd)
+    if supplement_epsilon:
+        fdlog = np.insert(fdlog, 0, fdlog[0]-epsilon[0])
+        rd = np.insert(rd, 0, rd[0]-epsilon[1])
+    rnlog = np.interp(fnlog, fdlog, rd)
 
     H = np.insert(np.power(10, rnlog/20), 0, 0)
 
@@ -350,9 +361,6 @@ def f_c():
         f_c[i] = float(line.split(' ')[2])
 
     return f_c
-
-def Acurve(N):
-    print('WIP')
 
 if __name__=="__main__":
     #for i in range(8, 12):
