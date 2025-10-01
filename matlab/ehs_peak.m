@@ -24,21 +24,26 @@ else
     xf=x;                                   % 32 and shorter should not be smoothed
 end
 
-range = max(x,[],2)-min(x,[],2);
-
-
 xd = [[0;0], xf(:,2:end)-xf(:,1:end-1)];
-sgn = [xd(:,1:end-1).*xd(:,2:end), [0;0]];
+%sgn = [xd(:,1:end-1).*xd(:,2:end), [0;0]];
+sgnxd = sign(xd);
+sd=[sgnxd(:,1:end-1)-sgnxd(:,2:end), [0;0]];
 
-extidx = sgn<0;
-pkidx = [sign(xd(:,1:end-1))-sign(xd(:,2:end))==2, zeros(2,1,"logical")];
-validx = [sign(xd(:,1:end-1))-sign(xd(:,2:end))==-2, zeros(2,1,"logical")];
+%extidx = sgn<0;
+pkidx = sd==2;
+validx = sd==-2;
 
+idx=[];
+for b=[1,2]
+    minidx = find(validx(b,:),1,"first");
+    idx = [idx; minidx+find(pkidx(b,minidx:end),1,"first")-1];
+end
 
 for i=[1,2]
     scatter(f(pkidx(i,:)),   0.01+x(i, pkidx(i,:))','g^')
     scatter(f(validx(i,:)), -0.01+x(i, validx(i,:))','rv')
-    scatter(f(extidx(i,:)),x(i,extidx(i,:)),'k+')
+    scatter(f(idx(i)), x(i,idx(i)),'k+')
+    %scatter(f(extidx(i,:)),x(i,extidx(i,:)),'k+')
 end
 
 
