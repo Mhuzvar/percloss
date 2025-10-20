@@ -9,11 +9,7 @@ except:
 class PreemLossParent(torch.nn.Module):
     def __init__(self, mode=0, N=2047):
         super().__init__()
-        if mode in range(5):
-            self.mode=mode
-        else:
-            raise ValueError(f"Invalid loss type {mode}.")
-        match self.mode:
+        match mode:
             case 0:
                 # a simple first order pre-emphasis (simple high pass)
                 self.a=torch.tensor([1, 0])
@@ -27,19 +23,15 @@ class PreemLossParent(torch.nn.Module):
                 # original paper used N=100
                 self.a=torch.zeros(N+1)
                 self.a[0]=1
-                self.b = torch.from_numpy(np.convolve([1, 0.85], wf.Acurve(N))).type(torch.float)
+                self.b = torch.from_numpy(np.convolve([1, 0.85], wf.Wcurve(N=N, mode=0))).type(torch.float)
             case 3:
-                # IIR A-weight, taken from a pdf online
-                self.a=torch.tensor([1, -1.31861375911, 0.32059452332])
-                self.b=torch.tensor([0.95616638497, -1.31960414122, 0.36343775625])
-            case 4:
                 # outer and middle ear
                 # approximation of the weighting function in ITU_T BS.1387 pg. 35
                 self.a=torch.zeros(N)
                 self.a[0]=1
-                self.b=torch.from_numpy(wf.BS1387curve(N=N)).type(torch.float)
+                self.b=torch.from_numpy(wf.Wcurve(N=N, mode=1)).type(torch.float)
             case _:
-                raise ValueError(f"Invalid loss type {self.mode}.")
+                raise ValueError(f"Invalid loss type {mode}.")
     
     def preem(self, x):
         #x = torch.nn.functional.conv1d(x.unsqueeze(1), kernel, padding=1).squeeze(1)
@@ -74,49 +66,45 @@ class eESR_DC(eESR):
         DC = (torch.mean(targets-predictions)**2)/torch.mean(targets**2)
         ESR = super().forward(predictions,targets)
         return ESR+DC
-
-class cepdist(torch.nn.Module):
-    def __init__(self, mode='linear', wlen=128, wstep=64, fs=44100, p=2.0):
+    
+class cd_lfcc(torch.nn.Module):
+    def __init__(self, wlen=128, wstep=64, fs=44100, p=2.0):
         super().__init__()
-        if mode in ['linear', 'mel', 'plp']:
-            self.mode=['linear', 'mel', 'plp'].index(mode)
-        else:
-            raise ValueError(f"Invalid cepstrum type {mode}.")
         self.p=p
         self.wlen=wlen
         self.wstep=wstep
         self.fs=fs
-        if self.mode:
-            self.onesided=True
-        else:
-            self.onesided=False
+        self.spec_tf=torchaudio.transforms.Spectrogram(n_fft=self.wlen,
+                                                hop_length=self.wstep,
+                                                window_fn=torch.hann_window,
+                                                power=2,
+                                                normalized=False,
+                                                onesided=False)
 
     def forward(self, predictions, targets):
         predictions = self.cep(predictions)
         targets = self.cep(targets)
-
         distmat = torch.cdist(predictions, targets, p=self.p)
-
         return torch.mean(distmat, dim=(1,2))
     
     def cep(self, x):
-        
-        spec_tf=torchaudio.transforms.Spectrogram(n_fft=self.wlen,
-                                                  hop_length=self.wstep,
-                                                  window_fn=torch.hann_window,
-                                                  power=2,
-                                                  normalized=False,
-                                                  onesided=self.onesided)
-        X=spec_tf(x)
-            # return a matrix with spectra in columns (wlen, wnum)
-        match self.mode:
-            case 0:
-                # normal power cepstrum
-                Xl=torch.log(X)
-                if len(Xl.shape) == 2:
-                    Xl = Xl.unsqueeze(0)
-            case 1:
-                mfcc = torchaudio.transforms.MFCC(sample_rate=self.fs,
+        X=self.spec_tf(x)
+        # returns a matrix with spectra in columns (wlen, wnum)
+        Xl=torch.log(X)
+        if len(Xl.shape) == 2:
+            Xl = Xl.unsqueeze(0)
+        cx = torch.real(torch.fft.ifft(Xl, n=None, dim=1, norm="backward"))
+        cx = cx[:,0:(self.wlen//2)+1,:]
+        return cx**2
+
+class cd_mfcc(torch.nn.Module):
+    def __init__(self, wlen=128, wstep=64, fs=44100, p=2.0):
+        super().__init__()
+        self.p=p
+        self.wlen=wlen
+        self.wstep=wstep
+        self.fs=fs
+        self.mfcc = torchaudio.transforms.MFCC(sample_rate=self.fs,
                                                   n_mfcc=40,
                                                   dct_type=2,
                                                   norm='ortho',
@@ -125,18 +113,12 @@ class cepdist(torch.nn.Module):
                                                              'hop_length':self.wstep,
                                                              'n_mels':40,
                                                              'center':False})
-            #case 2:
-                # PLPCC
-            case _:
-                raise ValueError(f"Invalid loss type {self.mode}.")
-        if self.mode==0:
-            cx = torch.real(torch.fft.ifft(Xl, n=None, dim=1, norm="backward"))
-            cx = cx[:,0:(self.wlen//2)+1,:]
-        elif self.mode==1:
-            cx=mfcc(x)
-        else:
-            cx = torch.transpose(torch.matmul(torch.transpose(torch.squeeze(Xl), 0, 1), ceps_tf), 0, 1)
-        return cx
+    
+    def forward(self, predictions, targets):
+        predictions = self.mfcc(predictions)
+        targets = self.mfcc(targets)
+        distmat = torch.cdist(predictions, targets, p=self.p)
+        return torch.mean(distmat, dim=(1,2))
 
 class PEAQ(torch.nn.Module):
     def __init__(self):
@@ -1315,7 +1297,22 @@ class PEAQ(torch.nn.Module):
             return torch.max(x,dim=1)
         if x.shape[1]<16:
             return torch.max(x[:,1:],dim=1)
-        
+        if x.shape[1]>32:
+            N=8
+            if x.shape[1]>128:
+                N=16
+            xf = torchaudio.functional.filtfilt(x,torch.cat(torch.ones(1), torch.zeros(N-1)),torch.ones(N)/N,clamp=True)
+            sxd = torch.sign(torch.cat(torch.zeros(x.shape[0], 1), xf[:,1:]-xf[:,:-1]))
+        else:
+            sxd  = torch.sign(torch.cat(torch.zeros(x.shape[0], 1), x[:,1:]-x[:,:-1]))
+        sx2d = torch.cat(sxd[:,:-1]-sxd[:,1:], torch.zeros(x.shape[0], 1))
+
+        minidx = torch.argmax((sx2d==-2).to(dtype=torch.int),dim=-1)
+        pkval = torch.empty(x.shape[0])
+        for b in range(x.shape[0]):
+            pkidx = minidx[b]+torch.argmax((sx2d[b,:]==2).to(dtype=torch.int),dim=-1)
+            pkval[b] = x[b,pkidx]
+
         # detecting peaks for reasonable length signals (16 or more samples)
         width = 15
         peak_mask = torch.cat([torch.zeros((x.shape[0],1), dtype=torch.uint8).bool(), (x[:, :-2]<x[:, 1:-1]) & (x[:, 2:]<x[:, 1:-1]), torch.zeros((x.shape[0],1), dtype=torch.uint8).bool()], dim=1)
