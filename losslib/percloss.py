@@ -121,8 +121,9 @@ class cd_mfcc(torch.nn.Module):
         return torch.mean(distmat, dim=(1,2))
 
 class PEAQ(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, fs=44100):
         super().__init__()
+        self.fs = fs
     
     def forward(self, predictions, targets):
         # come up with a playback level estimation
@@ -157,7 +158,7 @@ class PEAQ(torch.nn.Module):
 
 
     def pem(self, x):
-        nfft = int(np.floor(2048*(441/480)))
+        nfft = int(np.floor(2048*(self.fs/48000)))
         step = int(nfft//2)+1
 
         imin = 3
@@ -195,7 +196,7 @@ class PEAQ(torch.nn.Module):
         xw_nw = xw_nw[:,:,:942]*fac
 
         # outer and middle ear weighting function
-        f = np.linspace(0,44100,int(2048*(441/480)),endpoint=False)
+        f = np.linspace(0,44100,int(2048*(self.fs/48000)),endpoint=False)
             # approximately f = k*23.4375
         f = f[imin:imax]
         W = -0.6*3.64*((f/1000)**(-0.8)) + 6.5*np.exp(-0.6*((f/1000)-3.3)**2) - (1e-3)*(f/1000)**3.6
@@ -1242,9 +1243,11 @@ class PEAQ(torch.nn.Module):
             
     def ehs(self, x):
         print('WIP')
-        fc = wf.f_c()
-        maxlag = 2**torch.floor(torch.log2((fc/22050)*941))
+        #fc = wf.f_c()
+        #maxlag = 2**torch.floor(torch.log2((fc/22050)*941))
+        maxlag = 2**torch.floor(torch.log2((18000/self.fs)*(np.floor(2048*(self.fs/48000))//2+1)))
 
+        # modify to reflect single maxlag for all bands
         ehs = torch.empty(x.shape[0], 109)
         for band in range(109):
             C = torch.zeros(x.shape[0], maxlag[band])
@@ -1291,12 +1294,13 @@ class PEAQ(torch.nn.Module):
         return mn
 
     def ehs_peak(self, x):
-        print('WIP, copied from torch forum!')
+        print('WIP, not working yet!')
         # getting short signals out of the way
         if x.shape[1]<4:
             return torch.max(x,dim=1)
         if x.shape[1]<16:
             return torch.max(x[:,1:],dim=1)
+        # low pass filter on longer signals
         if x.shape[1]>32:
             N=8
             if x.shape[1]>128:
@@ -1305,14 +1309,20 @@ class PEAQ(torch.nn.Module):
             sxd = torch.sign(torch.cat(torch.zeros(x.shape[0], 1), xf[:,1:]-xf[:,:-1]))
         else:
             sxd  = torch.sign(torch.cat(torch.zeros(x.shape[0], 1), x[:,1:]-x[:,:-1]))
+        # diff of sign of diff
         sx2d = torch.cat(sxd[:,:-1]-sxd[:,1:], torch.zeros(x.shape[0], 1))
 
+        # first valley index
         minidx = torch.argmax((sx2d==-2).to(dtype=torch.int),dim=-1)
+        # first peak after minidx (recheck with MATLAB version)
         pkval = torch.empty(x.shape[0])
         for b in range(x.shape[0]):
             pkidx = minidx[b]+torch.argmax((sx2d[b,:]==2).to(dtype=torch.int),dim=-1)
             pkval[b] = x[b,pkidx]
 
+        # pkval now contains the value at first peak after first valley for each batch
+
+        ####################################################################
         # detecting peaks for reasonable length signals (16 or more samples)
         width = 15
         peak_mask = torch.cat([torch.zeros((x.shape[0],1), dtype=torch.uint8).bool(), (x[:, :-2]<x[:, 1:-1]) & (x[:, 2:]<x[:, 1:-1]), torch.zeros((x.shape[0],1), dtype=torch.uint8).bool()], dim=1)
