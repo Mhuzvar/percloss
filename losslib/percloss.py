@@ -124,6 +124,8 @@ class PEAQ(torch.nn.Module):
     def __init__(self, fs=44100):
         super().__init__()
         self.fs = fs
+
+        self.normfac = 1    # calculate from 1019.5 Hz sine wave
     
     def forward(self, predictions, targets):
         # come up with a playback level estimation
@@ -154,6 +156,7 @@ class PEAQ(torch.nn.Module):
         #r_epa = self.calc_adap(r_ep)
 
         MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(t_sp)), 20*torch.log10(torch.abs(r_sp)), np, r_msk.transpose(1,2), t_ep, r_ep, torch.abs(torch.abs(r_sp)-torch.abs(t_sp)))
+            # last input in wrong format (should be difference of log spectra)
 
 
 
@@ -190,12 +193,12 @@ class PEAQ(torch.nn.Module):
 
         #scaling of the input signals
         Lp = 92                                                 # default value
-        normfac = 1                                             # revisit
         print('##################\ninput signal scaling likely wrong!\n##################')
-        fac = (10**(Lp/20))/normfac
+        fac = (10**(Lp/20))/self.normfac
         xw_nw = xw_nw[:,:,:942]*fac
 
         # outer and middle ear weighting function
+        print('##################\n spectra shortened a step too soon!\n##################')
         f = np.linspace(0,44100,int(2048*(self.fs/48000)),endpoint=False)
             # approximately f = k*23.4375
         f = f[imin:imax]
@@ -1242,22 +1245,52 @@ class PEAQ(torch.nn.Module):
         return MFPD, ADB
             
     def ehs(self, x):
-        print('WIP')
-        #fc = wf.f_c()
-        #maxlag = 2**torch.floor(torch.log2((fc/22050)*941))
-        maxlag = 2**torch.floor(torch.log2((18000/self.fs)*(np.floor(2048*(self.fs/48000))//2+1)))
+        maxlag = int(2**np.floor(np.log2((18000/self.fs)*(np.floor(2048*(self.fs/48000))//2+1))))
+            # should always be 256
 
-        # modify to reflect single maxlag for all bands
-        ehs = torch.empty(x.shape[0], 109)
-        for band in range(109):
-            C = torch.zeros(x.shape[0], maxlag[band])
-            for lag in range(maxlag[band]):
-                x_t = torch.cat(torch.zeros(x.shape[0], lag), x[:,:maxlag[band]-lag], dim=1)
-                C[lag] = (x*x_t)/(torch.abs(x)*torch.abs(x_t))
-            C = C*torch.hann_window(maxlag[band])
-            C = C-torch.mean(C, dim=1)
-            C_ft = 20*torch.log10(torch.abs(torch.fft.rfft(C, dim=1, norm='forward')))
-            ehs[:, band] = self.ehs_peak(C_ft)
+        # apparently the lag is over bands and so is the spectrum calculation
+        ehs = torch.empty(x.shape[0], x.shape[1])
+        C = torch.zeros(x.shape[0], x.shape[1], maxlag)
+        C_norm = torch.sum(x*x,dim=-1)
+        for lag in range(maxlag):
+            C[:,:,lag] = torch.sum(x[:,:,:x.shape[2]-lag]*x[:,:,lag:],dim=-1)/C_norm
+        C = C*torch.hann_window(maxlag).repeat(x.shape[0],x.shape[1],1)
+            # windowed by normalized Hann window
+        C = C-torch.mean(C,dim=-1,keepdim=True)
+            # removing DC component
+        C_ft = 20*torch.log10(torch.abs(torch.fft.rfft(C, dim=-1, norm='forward')))
+            # power spectrum using FFT
+        
+        # peak detection
+        if C_ft.shape[-1]<4:                        # for extremely short spectra (should never happen)
+            ehs=torch.max(C_ft,dim=-1)
+        elif C_ft.shape[-1]<16:                     # for very short spectra (also shuld never happen)
+            ehs=torch.max(C_ft[:,:,1:],dim=-1)
+        else:                                       # otherwise
+            if C_ft.shape[-1]>32:                   # should be always
+                N=8
+                if x.shape[1]>128:                  # also should be always
+                    N=16
+                C_ft_norm = torch.max(torch.abs(C_ft),dim=-1,keepdim=True).values
+                xf = C_ft_norm*torchaudio.functional.filtfilt(C_ft/C_ft_norm,torch.cat((torch.ones(1), torch.zeros(N-1))),torch.ones(N)/N,clamp=False)
+                sxd = torch.sign(torch.cat((torch.zeros(C_ft.shape[0], C_ft.shape[1], 1), xf[:,:,1:]-xf[:,:,:-1]),dim=-1))
+            else:
+                sxd  = torch.sign(torch.cat((torch.zeros(C_ft.shape[0], C_ft.shape[1], 1), C_ft[:,:,1:]-C_ft[:,:,:-1]),dim=-1))
+            
+            # diff of sign of diff
+            sx2d = torch.cat((sxd[:,:,:-1]-sxd[:,:,1:], torch.zeros(C_ft.shape[0], C_ft.shape[1], 1)),dim=-1)
+
+            # first valley index
+            minidx = torch.argmax((sx2d==-2).to(dtype=torch.int),dim=-1)
+            # first peak after minidx
+            ehs = torch.empty(C_ft.shape[0],C_ft.shape[1])
+            for b in range(C_ft.shape[0]):
+                for t in range(C_ft.shape[1]):
+                    pkidx = minidx[b,t]+torch.argmax((sx2d[b,t,minidx[b,t]:]==2).to(dtype=torch.int),dim=-1)
+                    ehs[b,t] = x[b,t,pkidx]
+        # as quoted from the norm:
+        # "The average value of this maximum over frames multiplied by 1 000.0 is the error harmonic structure (EHS) variable."
+        return 1000*torch.mean(ehs, dim=-1)
 
 
     def AvgX(self, x, W=None):
@@ -1281,7 +1314,7 @@ class PEAQ(torch.nn.Module):
         for i in range(x.shape[1]-1, 2, -1):
             WA += (torch.sum(torch.sqrt(x[:, i-2:i+1]), dim=1)/4)**4
         return torch.sqrt(WA/(x.shape[1]-3))
-        
+    
     def batchmeanmin1(self, x, con=None, gr=None):
         '''
         Assumes first dim to be batch
@@ -1292,7 +1325,8 @@ class PEAQ(torch.nn.Module):
         for i in range(x.shape[0]):
             mn[i] = torch.mean(x[i,con[i,:]>gr])
         return mn
-
+    
+    '''
     def ehs_peak(self, x):
         print('WIP, not working yet!')
         # getting short signals out of the way
@@ -1305,37 +1339,25 @@ class PEAQ(torch.nn.Module):
             N=8
             if x.shape[1]>128:
                 N=16
-            xf = torchaudio.functional.filtfilt(x,torch.cat(torch.ones(1), torch.zeros(N-1)),torch.ones(N)/N,clamp=True)
-            sxd = torch.sign(torch.cat(torch.zeros(x.shape[0], 1), xf[:,1:]-xf[:,:-1]))
+            xf = torchaudio.functional.filtfilt(x,torch.cat((torch.ones(1), torch.zeros(N-1))),torch.ones(N)/N,clamp=False)
+            sxd = torch.sign(torch.cat((torch.zeros(x.shape[0], 1), xf[:,1:]-xf[:,:-1]),dim=-1))
         else:
-            sxd  = torch.sign(torch.cat(torch.zeros(x.shape[0], 1), x[:,1:]-x[:,:-1]))
+            sxd  = torch.sign(torch.cat((torch.zeros(x.shape[0], 1), x[:,1:]-x[:,:-1]),dim=-1))
         # diff of sign of diff
-        sx2d = torch.cat(sxd[:,:-1]-sxd[:,1:], torch.zeros(x.shape[0], 1))
+        sx2d = torch.cat((sxd[:,:-1]-sxd[:,1:], torch.zeros(x.shape[0], 1)),dim=-1)
 
         # first valley index
         minidx = torch.argmax((sx2d==-2).to(dtype=torch.int),dim=-1)
-        # first peak after minidx (recheck with MATLAB version)
+        # first peak after minidx
         pkval = torch.empty(x.shape[0])
         for b in range(x.shape[0]):
-            pkidx = minidx[b]+torch.argmax((sx2d[b,:]==2).to(dtype=torch.int),dim=-1)
+            pkidx = minidx[b]+torch.argmax((sx2d[b,minidx[b]:]==2).to(dtype=torch.int),dim=-1)
             pkval[b] = x[b,pkidx]
-
-        # pkval now contains the value at first peak after first valley for each batch
-
-        ####################################################################
-        # detecting peaks for reasonable length signals (16 or more samples)
-        width = 15
-        peak_mask = torch.cat([torch.zeros((x.shape[0],1), dtype=torch.uint8).bool(), (x[:, :-2]<x[:, 1:-1]) & (x[:, 2:]<x[:, 1:-1]), torch.zeros((x.shape[0],1), dtype=torch.uint8).bool()], dim=1)
-        #peak_mask = peak_mask & (a[:] > 0.1)
-        b = torch.nn.functional.max_pool1d_with_indices(x.unsqueeze(1), width, 1, padding=width//2)[1].squeeze(1)
-            # find what this does exactly
         
-        sets = []
-        for i in range(0, x.shape[0]):
-            bi = b[i,:].unique()
-            bi = bi[peak_mask[i,bi].nonzero()]
-            #sets.append(bi.flatten().tolist())
-            sets.append(bi)
+        # pkval now contains the value at first peak after first valley for each batch
+        return pkval
+        ####################################################################
+    '''
 
 class PEMOQ(torch.nn.Module):
     def __init__(self):
