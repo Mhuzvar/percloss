@@ -124,16 +124,19 @@ class PEAQ(torch.nn.Module):
     def __init__(self, fs=44100):
         super().__init__()
         self.fs = fs
+        self.nfft = int(np.floor(2048*(self.fs/48000)))
+        self.step = int(self.nfft//2)+1
 
         self.normfac = 1    # calculate from 1019.5 Hz sine wave
     
     def forward(self, predictions, targets):
         # come up with a playback level estimation
-        t_ep, t_mp, t_modEl, t_cb, t_sp = self.pem(predictions)
-        r_ep, r_mp, r_modEl, r_cb, r_sp = self.pem(targets)
+        #t_ep, t_mp, t_modEl, t_cb, t_sp = self.pem_old(predictions)
+        #r_ep, r_mp, r_modEl, r_cb, r_sp = self.pem_old(targets)
+        t_ep, t_mp, t_modEl, t_cb, t_sp, t_spw, r_ep, r_mp, r_modEl, r_cb, r_sp, r_spw = self.pem(predictions, targets)
 
         # error signal
-        np = self.crit_group(torch.abs((torch.abs(r_sp[:,:,3:769])-torch.abs(t_sp[:,:,3:769])))**2)
+        noisep = self.crit_group(torch.abs((torch.abs(r_sp[:,:,3:769])-torch.abs(t_sp[:,:,3:769])))**2)
         
         # masker
         t_msk = self.calc_mask(t_ep)
@@ -155,12 +158,84 @@ class PEAQ(torch.nn.Module):
         #t_epa = self.calc_adap(t_ep)
         #r_epa = self.calc_adap(r_ep)
 
-        MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(t_sp)), 20*torch.log10(torch.abs(r_sp)), np, r_msk.transpose(1,2), t_ep, r_ep, torch.abs(torch.abs(r_sp)-torch.abs(t_sp)))
+        MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(t_sp)), 20*torch.log10(torch.abs(r_sp)), noisep, r_msk.transpose(1,2), t_ep, r_ep, torch.abs(torch.abs(r_spw)-torch.abs(t_spw)))
             # last input in wrong format (should be difference of log spectra)
 
+    def pem(self, x, y):
+        # indices at which critical bands start and stop (to remove unnecessary data)
+        print('##################\nimin and imax not generalized!\n##################')
+        imin = 3
+        imax = 769
 
+        if len(x.shape) == 1:
+            x = x.unsqueeze(0)
+            y = y.unsqueeze(0)
+        bsize = x.shape[0]
+        x_cat = torch.cat((x,y), dim=0)     # makes both x and y be considered inputs in a batch
+        # cut up into 2048* sample windows and apply Hann window
+        # *wlen adjusted to fs to keep frequency resolution as similar to norm as possible
+        nwin = int(np.ceil((x_cat.shape[1]-self.nfft)/self.step)+1)
+        xw_nw = torch.zeros(x_cat.shape[0], nwin, self.nfft, dtype=torch.double)
+        for i in range(nwin-1):
+            xw_nw[:, i, :] = x_cat[:,i*self.step:(i*self.step)+self.nfft]*torch.hann_window(self.nfft, periodic=False)
+        xw_nw[:,nwin-1,:x_cat.shape[1]-(nwin-1)*self.step]=x_cat[:,(nwin-1)*self.step:]        
+        xw_nw[:,nwin-1,:] = xw_nw[:,nwin-1,:]*torch.hann_window(self.nfft, periodic=False)
+        
+        # fft
+        xw_nw = torch.fft.rfft(xw_nw, n=self.nfft, dim=2, norm='forward')
+            # may be replaced with torch.stft()
+            # ! ITU-R BS.1387-2 specifies normalization by 1/nfft
+        #print(xw_nw.shape) # Batch x wnum x spectrum length
+        #print(yw_nw.shape)
 
-    def pem(self, x):
+        # rectification
+            # probably solved by the torch.abs() in weighting step?
+
+        #scaling of the input signals
+        Lp = 92                                                 # default value
+        print('##################\nnormalization factor unsolved!\n##################')
+        fac = (10**(Lp/20))/self.normfac
+        #xw_nw = xw_nw[:,:,:942]*fac    # redundant when using rfft
+        xw_nw=fac*xw_nw
+        
+        # outer and middle ear weighting function
+        f = np.linspace(0,self.fs//2,xw_nw.shape[-1],endpoint=False)
+            # approximately f = k*23.4375
+        #f = f[imin:imax]
+        W = -0.6*3.64*((f/1000)**(-0.8)) + 6.5*np.exp(-0.6*((f/1000)-3.3)**2) - (1e-3)*(f/1000)**3.6
+        xw_nc = torch.abs(xw_nw)*torch.from_numpy(10**(W/20))
+            # this should work fine
+
+        # critical band grouping
+        print('##################\ncritband grouping unoptimized!\n##################')
+        xw = self.crit_group(torch.abs(xw_nc[:,:,imin:imax])**2)
+        
+        # adding internal noise
+        fc = wf.f_c()
+        W = 10**(0.4*0.364*((fc/1000)**(-0.8)))
+        uep = xw + torch.matmul(torch.ones(xw.shape, dtype=torch.double), torch.diag(W))
+
+        # frequency domain spreading
+        uep = self.freq_smear(fc, uep)
+            # changes dim to batch x frequency x time
+        mp, mod_eline = self.calc_mod(uep)
+
+        # time domain spreading
+        tau = 0.008+(2.2/fc)
+        a_vec = np.exp(-4/(187.5*tau))
+        ep = torch.zeros(uep.shape)
+        for i in range(1, ep.shape[-1]):
+            ep[:,:,i] = ep[:,:,i-1]*a_vec + uep[:,:,i]*(1-a_vec)
+            # inefficient for longer signals, revisit later
+        #for i, a in enumerate(a_vec):
+        #    print(a)
+        #    ep[:,i,1:] = torchaudio.functional.lfilter(uep[:,:,1:],a,1-a,clamp=False)
+            # shows an error I could not solve
+        ep=torch.maximum(ep,uep)
+        
+        return ep[:bsize,:,:], mp[:bsize,:,:], mod_eline[:bsize,:,:], xw[:bsize,:,:], xw_nw[:bsize,:,:], xw_nc[:bsize,:,:], ep[bsize:,:,:], mp[bsize:,:,:], mod_eline[bsize:,:,:], xw[bsize:,:,:], xw_nw[bsize:,:,:], xw_nc[bsize:,:,:]
+
+    def pem_old(self, x):
         nfft = int(np.floor(2048*(self.fs/48000)))
         step = int(nfft//2)+1
 
@@ -199,7 +274,7 @@ class PEAQ(torch.nn.Module):
 
         # outer and middle ear weighting function
         print('##################\n spectra shortened a step too soon!\n##################')
-        f = np.linspace(0,44100,int(2048*(self.fs/48000)),endpoint=False)
+        f = np.linspace(0,self.fs,int(2048*(self.fs/48000)),endpoint=False)
             # approximately f = k*23.4375
         f = f[imin:imax]
         W = -0.6*3.64*((f/1000)**(-0.8)) + 6.5*np.exp(-0.6*((f/1000)-3.3)**2) - (1e-3)*(f/1000)**3.6
@@ -1177,7 +1252,7 @@ class PEAQ(torch.nn.Module):
 
         EHS_B = self.ehs(F0)
 
-        return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B, BandWidthRef_B, BandWidthTest_B, NMR_B, RelDistFrames_B, MFPD_B, ADB_B
+        return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B, BandWidthRef_B, BandWidthTest_B, NMR_B, RelDistFrames_B, MFPD_B, ADB_B, EHS_B
 
     def ModDiff(self, xt, xr, negWt, offset):
         if negWt != 1:
@@ -1215,16 +1290,15 @@ class PEAQ(torch.nn.Module):
         e = rE-tE
         a = (10**(-0.5213902276543247/(6-2*(e>0).short())))/s
         pc = 1-10**(-a*(torch.pow(e,(6-2*(e>0).short()))))
-        qc = torch.abs(e.long())/s          # this is likely wrong
-        print('qc calculation may be wrong')
+        qc = torch.abs(torch.trunc(e))/s    # assuming INT() is rounding towards zero
         Pc = 1-torch.prod(1-pc, dim=1)
         Qc = torch.sum(qc, dim=1)
 
         Pc_curl = torch.empty(Pc.shape)
         Pc_curl[0] = 0
-        c0 = 0.9**(941/1881)            # should be ~equal to step_size/nfft
+        c0 = 0.9**(941/1881)                # should be ~equal to step_size/nfft
         #c1 = 0.99**(941/1881)
-        c1 = 1                          # page 63, idk man
+        c1 = 1                              # page 63, idk man
         PMc = torch.zeros(Pc_curl.shape[0], 2)
         for i in range(1,Pc_curl.shape[1]):
             Pc_curl[:,i] = (1-c0)*Pc[:,i]+c0*Pc_curl[:,i-1]
@@ -1290,8 +1364,8 @@ class PEAQ(torch.nn.Module):
                     ehs[b,t] = x[b,t,pkidx]
         # as quoted from the norm:
         # "The average value of this maximum over frames multiplied by 1 000.0 is the error harmonic structure (EHS) variable."
+        # maybe should be turned into torch.nanmean() later if energy thresholding is added
         return 1000*torch.mean(ehs, dim=-1)
-
 
     def AvgX(self, x, W=None):
         if W==None:
