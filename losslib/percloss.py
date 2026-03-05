@@ -151,33 +151,31 @@ class PEAQ(torch.nn.Module):
         # come up with a playback level estimation
         #t_ep, t_mp, t_modEl, t_cb, t_sp = self.pem_old(predictions)
         #r_ep, r_mp, r_modEl, r_cb, r_sp = self.pem_old(targets)
-        t_ep, t_mp, t_modEl, t_cb, t_sp, t_spw, r_ep, r_mp, r_modEl, r_cb, r_sp, r_spw = self.pem(predictions, targets)
+        ep, mp, modEl, cb, sp, spw, noisep = self.pem(predictions, targets)
+            # reference is always the latter half in batch
 
         # error signal
-        noisep = self.crit_group(torch.abs((torch.abs(r_sp[:,:,3:769])-torch.abs(t_sp[:,:,3:769])))**2)
-            # can be calculated inside .pem()
+        #noisep = self.crit_group(torch.abs((torch.abs(r_sp[:,:,3:769])-torch.abs(t_sp[:,:,3:769])))**2)
+            # moved into .pem()
         
         # masker
-        t_msk = self.calc_mask(t_ep)
-        r_msk = self.calc_mask(r_ep)
+        msk = self.calc_mask(ep)
 
-        t_slp = self.pat_adap_LP(t_ep)
-        r_slp = self.pat_adap_LP(r_ep)
+        slp = self.pat_adap_LP(ep)
             # low passed excitation patterns
-        t_slp, r_slp = self.lev_adap(t_slp, r_slp)
+        t_slp, r_slp = self.lev_adap(slp)
             # level adaptation
         t_Ep, r_Ep = self.pat_adap(t_slp, r_slp)
             # spectrally adapted patterns E_{P,x}
         
         # specific loudness patterns
-        Nt, Eth = self.calc_loud(t_ep)
-        Nr, _ = self.calc_loud(r_ep)
+        N, Eth = self.calc_loud(ep)
 
         # probably unnecessary
         #t_epa = self.calc_adap(t_ep)
         #r_epa = self.calc_adap(r_ep)
 
-        MOVs = self.calc_MOV(t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(t_sp)), 20*torch.log10(torch.abs(r_sp)), noisep, r_msk.transpose(1,2), t_ep, r_ep, torch.abs(torch.abs(r_spw)-torch.abs(t_spw)))
+        MOVs = self.calc_MOV(mp, modEl, Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(t_sp)), 20*torch.log10(torch.abs(r_sp)), noisep, r_msk.transpose(1,2), t_ep, r_ep, torch.abs(torch.abs(r_spw)-torch.abs(t_spw)))
             # last input in wrong format (should be difference of log spectra)
 
     def pem(self, x, y):
@@ -189,8 +187,10 @@ class PEAQ(torch.nn.Module):
         if len(x.shape) == 1:
             x = x.unsqueeze(0)
             y = y.unsqueeze(0)
-        bsize = x.shape[0]
-        x_cat = torch.cat((x,y), dim=0)     # makes both x and y be considered inputs in a batch
+        self.bsize = x.shape[0]
+        x_cat = torch.cat((x,y), dim=0)
+            # makes both x and y be considered inputs in a batch
+            
         # cut up into 2048* sample windows and apply Hann window
         # *wlen adjusted to fs to keep frequency resolution as similar to norm as possible
         nwin = int(np.ceil((x_cat.shape[1]-self.nfft)/self.step)+1)
@@ -222,8 +222,13 @@ class PEAQ(torch.nn.Module):
         xw_nc = torch.abs(xw_nw)*torch.pow(10,W/20)
             # this should work fine
 
+        # preparing error signal calculation
+        noisep = torch.abs(xw_nw[self.bsize:,:,imin:imax])-torch.abs(xw_nw[:self.bsize,:,imin:imax])
+        xw = torch.cat((xw_nc[:,:,imin:imax], noisep), dim=0)
+
         # critical band grouping
-        xw = self.crit_group(torch.abs(torch.square(xw_nc[:,:,imin:imax])))
+        xw = self.crit_group(torch.abs(torch.square(xw)))
+        xw, noisep = torch.vsplit(xw, [2*self.bsize])
         
         # adding internal noise
         fc = wf.f_c()
@@ -247,8 +252,9 @@ class PEAQ(torch.nn.Module):
         #    ep[:,i,1:] = torchaudio.functional.lfilter(uep[:,:,1:],a,1-a,clamp=False)
             # shows an error I could not solve
         ep=torch.maximum(ep,uep)
+
         
-        return ep[:bsize,:,:], mp[:bsize,:,:], mod_eline[:bsize,:,:], xw[:bsize,:,:], xw_nw[:bsize,:,:], xw_nc[:bsize,:,:], ep[bsize:,:,:], mp[bsize:,:,:], mod_eline[bsize:,:,:], xw[bsize:,:,:], xw_nw[bsize:,:,:], xw_nc[bsize:,:,:]
+        return ep, mp, mod_eline, xw, xw_nw, xw_nc, noisep
 
     '''
     def pem_old(self, x):
@@ -1102,11 +1108,12 @@ class PEAQ(torch.nn.Module):
             # *number of critical bands
 
     def freq_smear(self, fc, uep):
+        print('##################\nfrequency smearing needs optimization!\n##################')
         L = 10*torch.log10(uep)
         Su = -24-(230/fc)+0.2*L
             # only works as long as number of bands is last dimension of L
         Sl = 27     # lower slope is a constant
-        res = 0.25  # Bark scale resolution in case of 109 bands
+        res = 0.25  # Bark scale resolution for basic version
         Z = 109     # maximum of j (number of frequency bands) 
         
         Eline = torch.zeros((uep.shape[0], uep.shape[2], uep.shape[2], uep.shape[1]), dtype=torch.double)
@@ -1141,12 +1148,12 @@ class PEAQ(torch.nn.Module):
         m = 3*torch.ones(x.shape, dtype=torch.double)
         m[:,int(np.ceil(12/res)):,:]=0.25*torch.arange(np.ceil(12/res),x.shape[1], dtype=torch.double).unsqueeze(-1)*res
 
-        return x/(10**(m/10))
+        return x/torch.pow(10, m/10)
 
     def pat_adap_LP(self, x):
         fc = wf.f_c()
         tau = 0.008 + (4.2/fc)
-        a = np.exp(-(int((int(np.floor(2048*(441/480))))//2)+1)/(44100*tau))
+        a = torch.exp(-self.step/(self.fs*tau))
 
         P = torch.zeros(x.shape)
         P[:,:,0] = x[:,:,0]*(1-a)
@@ -1156,11 +1163,12 @@ class PEAQ(torch.nn.Module):
         return P
     
     def Lev_Corr(self, Pt, Pr):
-        LC = (torch.sum(torch.sqrt(Pt*Pr), dim=1)/torch.sum(Pt, dim=1))**2
+        LC = torch.square(torch.sum(torch.sqrt(Pt*Pr), dim=1)/torch.sum(Pt, dim=1))
         #LC[LC>1] = 1/LC[LC>1]
         return LC.repeat(Pr.shape[1],1,1).transpose(1,0)
     
-    def lev_adap(self, Pt, Pr):
+    def lev_adap(self, Px):
+        Pt, Pr = torch.vsplit(Px, [self.bsize])
         LevCorr = self.Lev_Corr(Pt, Pr)
         Pt[LevCorr<1] = Pt[LevCorr<1]*LevCorr[LevCorr<1]
         Pr[LevCorr>1] = Pr[LevCorr>1]/LevCorr[LevCorr>1]
@@ -1169,7 +1177,7 @@ class PEAQ(torch.nn.Module):
     def pat_adap(self, Et, Er):
         fc = wf.f_c()
         tau = 0.008 + (4.2/fc)
-        a = np.exp(-(int((int(np.floor(2048*(441/480))))//2)+1)/(44100*tau))
+        a = torch.exp(-self.step/(self.fs*tau))
         a = a.repeat(Et.shape[-1],1).transpose(0,1)
         mask = torch.zeros(Et.shape)
         R = torch.zeros(Et.shape, dtype=torch.double)
@@ -1179,7 +1187,7 @@ class PEAQ(torch.nn.Module):
             denom = torch.sum(mask*Er*Er*torch.fliplr(a**torch.arange(0,Et.shape[-1])), dim=2)
             R[:,:,n] = numer/denom
                 # ! need to fix situations where denom is 0
-        a = np.exp(-(int((int(np.floor(2048*(441/480))))//2)+1)/(44100*tau))
+        a = torch.exp(-self.step/(self.fs*tau))
             # returned to minimal size for later use
         
         Rt = torch.ones(R.shape, dtype=torch.double)
@@ -1223,12 +1231,12 @@ class PEAQ(torch.nn.Module):
     def calc_loud(self, E):
         print('Assuming atn() in paper means arc tangent!')
         f =  wf.f_c()
-        Eth = 10**(0.364*(f/1000)**(-0.8))
-        s = 10**((-2-2.05*torch.arctan(f/4000)-0.75*torch.arctan((f/1600)**2))/10)
-        N = 1.07664*((Eth/(s*(10**4)))**0.23)*(((1-s+(s*torch.transpose(E, 1,2))/Eth)**0.23)-1)
+        Eth = torch.pow(10, 0.364*torch.pow(f/1000, -0.8))
+        s = torch.pow(10, (-2-2.05*torch.arctan(f/4000)-0.75*torch.arctan(torch.square(f/1600, 2)))/10)
+        N = 1.07664*torch.pow(Eth/(s*(10**4)), 0.23)*(torch.pow(1-s+(s*torch.transpose(E, 1,2))/Eth, 0.23)-1)
         return (25/N.shape[1])*torch.sum(torch.clamp(N, min=0), dim=2), Eth
     
-    def calc_MOV(self, t_mp, r_mp, r_modEl, Eth, t_Ep, r_Ep, tF, rF, Pnoise, Mask, t_ep, r_ep, F0):
+    def calc_MOV(self, mp, r_modEl, Eth, t_Ep, r_Ep, tF, rF, Pnoise, Mask, t_ep, r_ep, F0):
         # Need to calculate:
         #   WinModDiff1_B
         #   AvgModDiff1_B
@@ -1242,14 +1250,14 @@ class PEAQ(torch.nn.Module):
         #   ADB_B
         #   EHS_B
         print('calc_MOV WIP')
-        MD1B = self.ModDiff(t_mp, r_mp, 1, 1)
+        # mp = (t_mp, r_mp)
+        MD1B = self.ModDiff(mp, 1, 1)
         TempWt = torch.sum(r_modEl.transpose(1,2)/(r_modEl.transpose(1,2)+100*Eth), dim=2)
         WinModDiff1_B = self.WinX(MD1B)
         AvgModDiff1_B = self.AvgX(MD1B, W=TempWt)
-        AvgModDiff2_B = self.AvgX(self.ModDiff(t_mp, r_mp, 0.1, 0.01), W=TempWt)
+        AvgModDiff2_B = self.AvgX(self.ModDiff(mp, 0.1, 0.01), W=TempWt)
 
-        st = 0.15*t_mp.transpose(1,2)+0.5
-        sr = 0.15*r_mp.transpose(1,2)+0.5
+        st, sr = torch.vsplit(0.15*mp.transpose(1,2)+0.5, [self.bsize])
         #beta = torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep)
         #NL = ((Eth/st)**0.23)*(((1+torch.clamp(st*t_Ep-sr*r_Ep,min=0)/(Eth+sr*r_Ep*beta))**0.23)-1)
         NL = ((Eth/st)**0.23)*(((1+torch.clamp(st*t_Ep.transpose(1,2)-sr*r_Ep.transpose(1,2),min=0)/(Eth+sr*r_Ep.transpose(1,2)*torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep).transpose(1,2)))**0.23)-1)
@@ -1272,7 +1280,8 @@ class PEAQ(torch.nn.Module):
 
         return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B, BandWidthRef_B, BandWidthTest_B, NMR_B, RelDistFrames_B, MFPD_B, ADB_B, EHS_B
 
-    def ModDiff(self, xt, xr, negWt, offset):
+    def ModDiff(self, xx, negWt, offset):
+        xt, xr = torch.vsplit(xx, [self.bsize])
         if negWt != 1:
             w = torch.ones(xt.shape)
             w[xt<xr]=negWt
