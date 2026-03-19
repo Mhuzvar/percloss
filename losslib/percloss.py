@@ -151,7 +151,7 @@ class PEAQ(torch.nn.Module):
         # come up with a playback level estimation
         #t_ep, t_mp, t_modEl, t_cb, t_sp = self.pem_old(predictions)
         #r_ep, r_mp, r_modEl, r_cb, r_sp = self.pem_old(targets)
-        ep, mp, modEl, cb, sp, spw, noisep = self.pem(predictions, targets)
+        ep, mp, modEl, cb, sp, spw, noisep, EHS_B = self.pem(predictions, targets)
             # reference is always the latter half in batch
 
         # error signal
@@ -159,7 +159,7 @@ class PEAQ(torch.nn.Module):
             # moved into .pem()
         
         # masker
-        msk = self.calc_mask(ep)
+        msk = self.calc_mask(ep[self.bsize:,:,:])
 
         slp = self.pat_adap_LP(ep)
             # low passed excitation patterns
@@ -175,8 +175,7 @@ class PEAQ(torch.nn.Module):
         #t_epa = self.calc_adap(t_ep)
         #r_epa = self.calc_adap(r_ep)
 
-        MOVs = self.calc_MOV(mp, modEl, Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(t_sp)), 20*torch.log10(torch.abs(r_sp)), noisep, r_msk.transpose(1,2), t_ep, r_ep, torch.abs(torch.abs(r_spw)-torch.abs(t_spw)))
-            # last input in wrong format (should be difference of log spectra)
+        MOVs = self.calc_MOV(mp, modEl[self.bsize:,:,:], Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(sp)), noisep, msk.transpose(1,2), ep)
 
     def pem(self, x, y):
         # indices at which critical bands start and stop (to remove unnecessary data)
@@ -225,6 +224,8 @@ class PEAQ(torch.nn.Module):
         # preparing error signal calculation
         noisep = torch.abs(xw_nw[self.bsize:,:,imin:imax])-torch.abs(xw_nw[:self.bsize,:,imin:imax])
         xw = torch.cat((xw_nc[:,:,imin:imax], noisep), dim=0)
+        #F0 = 10*torch.log10(torch.abs(xw_nw[self.bsize:,:,imin:imax])/torch.abs(xw_nw[:self.bsize,:,imin:imax]))
+        EHS_B = self.ehs(20*torch.log10(torch.abs(xw_nw[self.bsize:,:,imin:imax])/torch.abs(xw_nw[:self.bsize,:,imin:imax])))
 
         # critical band grouping
         xw = self.crit_group(torch.abs(torch.square(xw)))
@@ -254,7 +255,7 @@ class PEAQ(torch.nn.Module):
         ep=torch.maximum(ep,uep)
 
         
-        return ep, mp, mod_eline, xw, xw_nw, xw_nc, noisep
+        return ep, mp, mod_eline, xw, xw_nw, xw_nc, noisep, EHS_B
 
     '''
     def pem_old(self, x):
@@ -1229,14 +1230,14 @@ class PEAQ(torch.nn.Module):
         return Mod, El
     
     def calc_loud(self, E):
-        print('Assuming atn() in paper means arc tangent!')
+        print('Assuming atn() in the norm means arc tangent!')
         f =  wf.f_c()
         Eth = torch.pow(10, 0.364*torch.pow(f/1000, -0.8))
-        s = torch.pow(10, (-2-2.05*torch.arctan(f/4000)-0.75*torch.arctan(torch.square(f/1600, 2)))/10)
+        s = torch.pow(10, (-2-2.05*torch.arctan(f/4000)-0.75*torch.arctan(torch.square(f/1600)))/10)
         N = 1.07664*torch.pow(Eth/(s*(10**4)), 0.23)*(torch.pow(1-s+(s*torch.transpose(E, 1,2))/Eth, 0.23)-1)
         return (25/N.shape[1])*torch.sum(torch.clamp(N, min=0), dim=2), Eth
     
-    def calc_MOV(self, mp, r_modEl, Eth, t_Ep, r_Ep, tF, rF, Pnoise, Mask, t_ep, r_ep, F0):
+    def calc_MOV(self, mp, r_modEl, Eth, t_Ep, r_Ep, sp_log, Pnoise, Mask, ep):
         # Need to calculate:
         #   WinModDiff1_B
         #   AvgModDiff1_B
@@ -1265,7 +1266,7 @@ class PEAQ(torch.nn.Module):
         # may not be completely correct, returns fband dependent result
 
         #Bandwidth
-        bwt, bwr = self.BWidth(tF, rF)
+        bwt, bwr = self.BWidth(sp_log)
         BandWidthRef_B = self.batchmeanmin1(bwr, gr=346)
         BandWidthTest_B = self.batchmeanmin1(bwt, con=bwr, gr=346)
 
@@ -1274,11 +1275,12 @@ class PEAQ(torch.nn.Module):
 
         RelDistFrames_B = self.RDF(10*torch.log10(PoverM))
 
-        MFPD_B, ADB_B = self.mfpd_adb(10*torch.log10(t_ep), 10*torch.log10(r_ep))
+        MFPD_B, ADB_B = self.mfpd_adb(10*torch.log10(ep))
 
-        EHS_B = self.ehs(F0)
+        #EHS_B = self.ehs(F0)
+            # calculated in self.pem()
 
-        return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B, BandWidthRef_B, BandWidthTest_B, NMR_B, RelDistFrames_B, MFPD_B, ADB_B, EHS_B
+        return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B, BandWidthRef_B, BandWidthTest_B, NMR_B, RelDistFrames_B, MFPD_B, ADB_B
 
     def ModDiff(self, xx, negWt, offset):
         xt, xr = torch.vsplit(xx, [self.bsize])
@@ -1290,9 +1292,10 @@ class PEAQ(torch.nn.Module):
         md = w*torch.abs(xt-xr)/(offset+xr)
         return 100*torch.sum(md, dim=1)/xt.shape[1]
 
-    def BWidth(self, FLTst, FLRef):
+    def BWidth(self, FL):
         print('BWidth WIP')
-        
+
+        FLTst, FLRef = torch.vsplit(FL, [self.bsize])
         ZeroThreshold = FLTst[:,:,921:].max(dim=2).values
         BWRef = torch.empty(FLTst.shape[0::2])
         BWTst = torch.empty(FLTst.shape[0::2])
@@ -1310,7 +1313,8 @@ class PEAQ(torch.nn.Module):
             rdf[b] = xm[b,xm[b,:]>=1.5].shape[0]
         return rdf
 
-    def mfpd_adb(self, tE, rE):
+    def mfpd_adb(self, E):
+        tE, rE = torch.vsplit(E, [self.bsize])
         Lkn = 0.3*torch.maximum(rE,tE)+0.7*tE
         s = 1e30*torch.ones(Lkn.shape, dtype=torch.double)
         s[Lkn>0] = 5.95072*((6.39468/Lkn[Lkn>0])**1.71332)+(9.01033e-11)*(Lkn[Lkn>0]**4)+(5.05622e-6)*(Lkn[Lkn>0]**3)-0.00102438*(Lkn[Lkn>0]**2)+0.0550197*Lkn[Lkn>0]-0.198719
@@ -1417,6 +1421,7 @@ class PEAQ(torch.nn.Module):
         return torch.sqrt(WA/(x.shape[1]-3))
     
     def batchmeanmin1(self, x, con=None, gr=None):
+        print("mean calculation likely wrong!")
         '''
         Assumes first dim to be batch
         '''
