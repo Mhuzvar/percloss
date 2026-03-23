@@ -148,11 +148,14 @@ class PEAQ(torch.nn.Module):
         self.fac = (10**(Lp/20))/normfac
     
     def forward(self, predictions, targets):
+        MOVs = torch.empty((self.bsize, 11))
+
         # come up with a playback level estimation
         #t_ep, t_mp, t_modEl, t_cb, t_sp = self.pem_old(predictions)
         #r_ep, r_mp, r_modEl, r_cb, r_sp = self.pem_old(targets)
-        ep, mp, modEl, cb, sp, spw, noisep, EHS_B = self.pem(predictions, targets)
+        ep, mp, modEl, cb, sp, spw, noisep, MOVs[:,5] = self.pem(predictions, targets)
             # reference is always the latter half in batch
+            # MOV index 5 is EHS_B (p. 68)
 
         # error signal
         #noisep = self.crit_group(torch.abs((torch.abs(r_sp[:,:,3:769])-torch.abs(t_sp[:,:,3:769])))**2)
@@ -175,7 +178,18 @@ class PEAQ(torch.nn.Module):
         #t_epa = self.calc_adap(t_ep)
         #r_epa = self.calc_adap(r_ep)
 
-        MOVs = self.calc_MOV(mp, modEl[self.bsize:,:,:], Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(sp)), noisep, msk.transpose(1,2), ep)
+        # calculation of remaining MOVs
+        MOVs[:,:5], MOVs[:, 6:] = self.calc_MOV(mp, modEl[self.bsize:,:,:], Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(sp)), noisep, msk.transpose(1,2), ep)
+        amin = torch.tensor([393.915565, 361.965332, -24.046116,   1.110661, -0.206623,  0.074318,  1.113683,    0.950345,  0.029985, 0.000101, 0])
+        amax = torch.tensor([921       , 881.131226,  16.212030, 107.137772,  2.886017, 13.933351, 63.257874, 1145.018555, 14.819740, 1       , 1])
+        
+        x = (MOVs-amin)/(amax-amin)
+        nodes = torch.matmul(x,torch.tensor([[-0.502657,  0.436333,  1.219602],[ 4.307481,  3.246017,  1.123743],[ 4.984241, -2.211189, -0.192096],[ 0.051056, -1.762424,  4.331315],[ 2.321580,  1.789971, -0.754560],[-5.303901, -3.452257, -10.814982],[ 2.730991, -6.111805,  1.519223],[ 0.624950, -1.331523, -5.955151],[ 3.102889,  0.871260, -5.922878],[-1.051468, -0.939882, -0.142913],[-1.804679, -0.503610, -0.620456]]))
+        nodes = nodes+torch.tensor([-2.518254,0.654841,-2.207228])
+        nodes = 1/1+torch.exp(-nodes)
+        DI = torch.matmul(nodes,torch.tensor([-3.817048,4.107138,4.629582]))-0.307594
+        ODG = -3.98+4.2/(1+torch.exp(-DI))
+        return ODG
 
     def pem(self, x, y):
         # indices at which critical bands start and stop (to remove unnecessary data)
@@ -1251,36 +1265,42 @@ class PEAQ(torch.nn.Module):
         #   ADB_B
         #   EHS_B
         print('calc_MOV WIP')
+        ret1 = torch.empty([self.bsize, 5])
+        ret2 = torch.empty([self.bsize, 5])
         # mp = (t_mp, r_mp)
         MD1B = self.ModDiff(mp, 1, 1)
         TempWt = torch.sum(r_modEl.transpose(1,2)/(r_modEl.transpose(1,2)+100*Eth), dim=2)
-        WinModDiff1_B = self.WinX(MD1B)
-        AvgModDiff1_B = self.AvgX(MD1B, W=TempWt)
-        AvgModDiff2_B = self.AvgX(self.ModDiff(mp, 0.1, 0.01), W=TempWt)
+        ret1[:,3] = self.WinX(MD1B)
+            # WinModDiff1_B
+        ret2[:,0] = self.AvgX(MD1B, W=TempWt)
+            # AvgModDiff1_B
+        ret2[:,1] = self.AvgX(self.ModDiff(mp, 0.1, 0.01), W=TempWt)
+            # AvgModDiff2_B
 
         st, sr = torch.vsplit(0.15*mp.transpose(1,2)+0.5, [self.bsize])
         #beta = torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep)
         #NL = ((Eth/st)**0.23)*(((1+torch.clamp(st*t_Ep-sr*r_Ep,min=0)/(Eth+sr*r_Ep*beta))**0.23)-1)
         NL = ((Eth/st)**0.23)*(((1+torch.clamp(st*t_Ep.transpose(1,2)-sr*r_Ep.transpose(1,2),min=0)/(Eth+sr*r_Ep.transpose(1,2)*torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep).transpose(1,2)))**0.23)-1)
-        RmsNoiseLoud_B = self.RmsX(NL)
+        ret2[:,2] = self.RmsX(NL)   # RmsNoiseLoud_B
         # may not be completely correct, returns fband dependent result
 
         #Bandwidth
         bwt, bwr = self.BWidth(sp_log)
-        BandWidthRef_B = self.batchmeanmin1(bwr, gr=346)
-        BandWidthTest_B = self.batchmeanmin1(bwt, con=bwr, gr=346)
+        ret1[:,0] = self.batchmeanmin1(bwr, gr=346)             # BandWidthRef_B
+        ret1[:,1] = self.batchmeanmin1(bwt, con=bwr, gr=346)    # BandWidthTest_B
 
         PoverM = Pnoise/Mask
-        NMR_B = 10*torch.log10(torch.sum(torch.sum(PoverM, dim=2)/Pnoise.shape[2], dim=1)/Pnoise.shape[1])
+        ret1[:,2] = 10*torch.log10(torch.sum(torch.sum(PoverM, dim=2)/Pnoise.shape[2], dim=1)/Pnoise.shape[1])
+            # total NMR_B
+        ret2[:,4] = self.RDF(10*torch.log10(PoverM))    # RelDistFrames_B
 
-        RelDistFrames_B = self.RDF(10*torch.log10(PoverM))
-
-        MFPD_B, ADB_B = self.mfpd_adb(10*torch.log10(ep))
+        ret2[:,3], ret1[:,4] = self.mfpd_adb(10*torch.log10(ep))
+            # MFPD_B, ADB_B
 
         #EHS_B = self.ehs(F0)
             # calculated in self.pem()
 
-        return WinModDiff1_B, AvgModDiff1_B, AvgModDiff2_B, RmsNoiseLoud_B, BandWidthRef_B, BandWidthTest_B, NMR_B, RelDistFrames_B, MFPD_B, ADB_B
+        return ret1, ret2
 
     def ModDiff(self, xx, negWt, offset):
         xt, xr = torch.vsplit(xx, [self.bsize])
