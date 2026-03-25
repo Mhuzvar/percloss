@@ -148,6 +148,10 @@ class PEAQ(torch.nn.Module):
         self.fac = (10**(Lp/20))/normfac
     
     def forward(self, predictions, targets):
+        if len(predictions.shape) == 1:
+            self.bsize = 1
+        else:
+            self.bsize = predictions.shape[0]
         MOVs = torch.empty((self.bsize, 11))
 
         # come up with a playback level estimation
@@ -200,7 +204,6 @@ class PEAQ(torch.nn.Module):
         if len(x.shape) == 1:
             x = x.unsqueeze(0)
             y = y.unsqueeze(0)
-        self.bsize = x.shape[0]
         x_cat = torch.cat((x,y), dim=0)
             # makes both x and y be considered inputs in a batch
             
@@ -1280,7 +1283,7 @@ class PEAQ(torch.nn.Module):
         st, sr = torch.vsplit(0.15*mp.transpose(1,2)+0.5, [self.bsize])
         #beta = torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep)
         #NL = ((Eth/st)**0.23)*(((1+torch.clamp(st*t_Ep-sr*r_Ep,min=0)/(Eth+sr*r_Ep*beta))**0.23)-1)
-        NL = ((Eth/st)**0.23)*(((1+torch.clamp(st*t_Ep.transpose(1,2)-sr*r_Ep.transpose(1,2),min=0)/(Eth+sr*r_Ep.transpose(1,2)*torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep).transpose(1,2)))**0.23)-1)
+        NL = torch.pow(Eth/st,0.23)*(torch.pow(1+torch.clamp(st*t_Ep.transpose(1,2)-sr*r_Ep.transpose(1,2),min=0)/(Eth+sr*r_Ep.transpose(1,2)*torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep).transpose(1,2)),0.23)-1)
         ret2[:,2] = self.RmsX(NL)   # RmsNoiseLoud_B
         # may not be completely correct, returns fband dependent result
 
@@ -1428,11 +1431,11 @@ class PEAQ(torch.nn.Module):
     
     def RmsX(self, x, W=None, Z=1):
         if W==None:
-            N = x.shape[1]**2
+            N = x.shape[1]
         else:
-            N = torch.sum(W)**2
-            x = (x*W)**2
-        return np.sqrt(Z)*torch.sqrt(torch.sum(x, dim=1)/N)
+            N = torch.sum(torch.square(W))
+            x = x*W
+        return np.sqrt(Z)*torch.sqrt(torch.sum(torch.square(x), dim=1)/N)
 
     def WinX(self, x):
         WA = torch.zeros(x.shape[0])
