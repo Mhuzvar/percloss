@@ -190,7 +190,7 @@ class PEAQ(torch.nn.Module):
         x = (MOVs-amin)/(amax-amin)
         nodes = torch.matmul(x,torch.tensor([[-0.502657,  0.436333,  1.219602],[ 4.307481,  3.246017,  1.123743],[ 4.984241, -2.211189, -0.192096],[ 0.051056, -1.762424,  4.331315],[ 2.321580,  1.789971, -0.754560],[-5.303901, -3.452257, -10.814982],[ 2.730991, -6.111805,  1.519223],[ 0.624950, -1.331523, -5.955151],[ 3.102889,  0.871260, -5.922878],[-1.051468, -0.939882, -0.142913],[-1.804679, -0.503610, -0.620456]]))
         nodes = nodes+torch.tensor([-2.518254,0.654841,-2.207228])
-        nodes = 1/1+torch.exp(-nodes)
+        nodes = 1/(1+torch.exp(-nodes))
         DI = torch.matmul(nodes,torch.tensor([-3.817048,4.107138,4.629582]))-0.307594
         ODG = -3.98+4.2/(1+torch.exp(-DI))
         return ODG
@@ -1284,13 +1284,14 @@ class PEAQ(torch.nn.Module):
         #beta = torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep)
         #NL = ((Eth/st)**0.23)*(((1+torch.clamp(st*t_Ep-sr*r_Ep,min=0)/(Eth+sr*r_Ep*beta))**0.23)-1)
         NL = torch.pow(Eth/st,0.23)*(torch.pow(1+torch.clamp(st*t_Ep.transpose(1,2)-sr*r_Ep.transpose(1,2),min=0)/(Eth+sr*r_Ep.transpose(1,2)*torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep).transpose(1,2)),0.23)-1)
-        ret2[:,2] = self.RmsX(NL)   # RmsNoiseLoud_B
-        # may not be completely correct, returns fband dependent result
+        ret2[:,2] = torch.mean(self.RmsX(NL), dim=-1)   # RmsNoiseLoud_B
+        # not sure if temporal and spectral averaging is in correct order
 
         #Bandwidth
-        bwt, bwr = self.BWidth(sp_log)
-        ret1[:,0] = self.batchmeanmin1(bwr, gr=346)             # BandWidthRef_B
-        ret1[:,1] = self.batchmeanmin1(bwt, con=bwr, gr=346)    # BandWidthTest_B
+        #bwt, bwr = self.BWidth(sp_log)
+        #ret1[:,0] = self.batchmeanmin1(bwr, gr=346)             # BandWidthRef_B
+        #ret1[:,1] = self.batchmeanmin1(bwt, con=bwr, gr=346)    # BandWidthTest_B
+        ret1[:,:2] = self.BWidth(sp_log)
 
         PoverM = Pnoise/Mask
         ret1[:,2] = 10*torch.log10(torch.sum(torch.sum(PoverM, dim=2)/Pnoise.shape[2], dim=1)/Pnoise.shape[1])
@@ -1319,15 +1320,22 @@ class PEAQ(torch.nn.Module):
         print('BWidth WIP')
 
         FLTst, FLRef = torch.vsplit(FL, [self.bsize])
-        ZeroThreshold = FLTst[:,:,921:].max(dim=2).values
-        BWRef = torch.empty(FLTst.shape[0::2])
-        BWTst = torch.empty(FLTst.shape[0::2])
+        ZeroThreshold = torch.amax(FLTst[:,:,921:], dim=2)
+        BWRef = torch.empty(FLTst.shape[0:2])
+        BWTst = torch.empty(FLTst.shape[0:2])
         for n in range(FLRef.shape[1]):
-            nzs = (FLRef[:,n,:921].transpose(0,1)>=10+ZeroThreshold[:,n]).nonzero()
+            nzs = torch.ge(FLRef[:,n,:921].transpose(0,1), 10+ZeroThreshold[:,n]).nonzero()
+                # returns a tensor of nonzero in the format [[i1, j1], ..., [in, jn]]
+                # nonzero elements are then at FLRef[nzs[k,i1], n, nzs[k, i2]]
             for b in range(FLRef.shape[0]):
                 BWRef[b,n] = torch.max(nzs[nzs[:,1]==b])+1
                 BWTst[b,n] = torch.max((FLTst[b,n,:int(BWRef[b,n])]>=5+ZeroThreshold[b,n]).nonzero())+1
-        return BWTst, BWRef
+        
+        BWx_B = torch.empty(self.bsize,2)
+        for b in range(BWRef.shape[0]):
+            BWx_B[b,0] = torch.mean(BWRef[b,BWRef[b,:]>346])
+            BWx_B[b,1] = torch.mean(BWTst[b,BWRef[b,:]>346])
+        return BWx_B
 
     def RDF(self, x):
         xm = x.max(dim=2).values
@@ -1442,18 +1450,6 @@ class PEAQ(torch.nn.Module):
         for i in range(x.shape[1]-1, 2, -1):
             WA += (torch.sum(torch.sqrt(x[:, i-2:i+1]), dim=1)/4)**4
         return torch.sqrt(WA/(x.shape[1]-3))
-    
-    def batchmeanmin1(self, x, con=None, gr=None):
-        print("mean calculation likely wrong!")
-        '''
-        Assumes first dim to be batch
-        '''
-        if con==None:
-            con = x
-        mn = torch.empty(x.shape[0])
-        for i in range(x.shape[0]):
-            mn[i] = torch.mean(x[i,con[i,:]>gr])
-        return mn
     
     '''
     def ehs_peak(self, x):
