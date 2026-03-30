@@ -152,7 +152,7 @@ class PEAQ(torch.nn.Module):
             self.bsize = 1
         else:
             self.bsize = predictions.shape[0]
-        MOVs = torch.empty((self.bsize, 11))
+        MOVs = torch.empty((self.bsize, 11), requires_grad=True)
 
         # come up with a playback level estimation
         #t_ep, t_mp, t_modEl, t_cb, t_sp = self.pem_old(predictions)
@@ -210,7 +210,7 @@ class PEAQ(torch.nn.Module):
         # cut up into 2048* sample windows and apply Hann window
         # *wlen adjusted to fs to keep frequency resolution as similar to norm as possible
         nwin = int(np.ceil((x_cat.shape[1]-self.nfft)/self.step)+1)
-        xw_nw = torch.zeros(x_cat.shape[0], nwin, self.nfft, dtype=torch.double)
+        xw_nw = torch.zeros(x_cat.shape[0], nwin, self.nfft, dtype=torch.double, requires_grad=True)
         for i in range(nwin-1):
             xw_nw[:, i, :] = x_cat[:,i*self.step:(i*self.step)+self.nfft]*torch.hann_window(self.nfft, periodic=False)
         xw_nw[:,nwin-1,:x_cat.shape[1]-(nwin-1)*self.step]=x_cat[:,(nwin-1)*self.step:]        
@@ -261,7 +261,7 @@ class PEAQ(torch.nn.Module):
         # time domain spreading
         tau = 0.008+(2.2/fc)
         a_vec = torch.exp(-4/(187.5*tau))
-        ep = torch.zeros(uep.shape)
+        ep = torch.zeros(uep.shape, requires_grad=True)
         for i in range(1, ep.shape[-1]):
             ep[:,:,i] = ep[:,:,i-1]*a_vec + uep[:,:,i]*(1-a_vec)
             # inefficient for longer signals, revisit later
@@ -1134,15 +1134,15 @@ class PEAQ(torch.nn.Module):
         res = 0.25  # Bark scale resolution for basic version
         Z = 109     # maximum of j (number of frequency bands) 
         
-        Eline = torch.zeros((uep.shape[0], uep.shape[2], uep.shape[2], uep.shape[1]), dtype=torch.double)
-        Ecurl = torch.zeros((uep.shape[0], uep.shape[2], uep.shape[2]), dtype=torch.double)
+        Eline = torch.zeros((uep.shape[0], uep.shape[2], uep.shape[2], uep.shape[1]), dtype=torch.double, requires_grad=True)
+        Ecurl = torch.zeros((uep.shape[0], uep.shape[2], uep.shape[2]), dtype=torch.double, requires_grad=True)
 
         for j in range(109):                    # across frequency bands
-            idx1 = torch.zeros(Z, dtype=torch.double)
-            idx2 = torch.zeros(Z, dtype=torch.double)
+            idx1 = torch.zeros(Z, dtype=torch.double, requires_grad=True)
+            idx2 = torch.zeros(Z, dtype=torch.double, requires_grad=True)
             idx1[:j]=1
             idx2[j:]=1
-            mu = torch.tensor(range(Z))
+            mu = torch.tensor(range(Z), requires_grad=True)
             d1 = torch.sum(torch.pow(10, (-res*(j-mu)*Sl*idx1)/10)*idx1)
             d2 = torch.sum(torch.pow(10, torch.einsum('i,bj->bji',res*(mu-j)*idx2, Su[:,:,j])/10)*idx2, dim=2)
             for n in range(uep.shape[1]):       # across windows (time)
@@ -1163,7 +1163,7 @@ class PEAQ(torch.nn.Module):
     def calc_mask(self, x):
         res = 0.25
 
-        m = 3*torch.ones(x.shape, dtype=torch.double)
+        m = 3*torch.ones(x.shape, dtype=torch.double, requires_grad=True)
         m[:,int(np.ceil(12/res)):,:]=0.25*torch.arange(np.ceil(12/res),x.shape[1], dtype=torch.double).unsqueeze(-1)*res
 
         return x/torch.pow(10, m/10)
@@ -1173,7 +1173,7 @@ class PEAQ(torch.nn.Module):
         tau = 0.008 + (4.2/fc)
         a = torch.exp(-self.step/(self.fs*tau))
 
-        P = torch.zeros(x.shape)
+        P = torch.zeros(x.shape, requires_grad=True)
         P[:,:,0] = x[:,:,0]*(1-a)
         for i in range(1, P.shape[-1]):
             P[:,:,i] = P[:,:,i-1]*a + x[:,:,i]*(1-a)
@@ -1197,8 +1197,8 @@ class PEAQ(torch.nn.Module):
         tau = 0.008 + (4.2/fc)
         a = torch.exp(-self.step/(self.fs*tau))
         a = a.repeat(Et.shape[-1],1).transpose(0,1)
-        mask = torch.zeros(Et.shape)
-        R = torch.zeros(Et.shape, dtype=torch.double)
+        mask = torch.zeros(Et.shape, requires_grad=True)
+        R = torch.zeros(Et.shape, dtype=torch.double, requires_grad=True)
         for n in range(R.shape[-1]):
             mask[:,:,-n-1]=1
             numer = torch.sum(mask*Et*Er*torch.fliplr(a**torch.arange(0,Et.shape[-1])), dim=2)
@@ -1208,8 +1208,8 @@ class PEAQ(torch.nn.Module):
         a = torch.exp(-self.step/(self.fs*tau))
             # returned to minimal size for later use
         
-        Rt = torch.ones(R.shape, dtype=torch.double)
-        Rr = torch.ones(R.shape, dtype=torch.double)
+        Rt = torch.ones(R.shape, dtype=torch.double, requires_grad=True)
+        Rr = torch.ones(R.shape, dtype=torch.double, requires_grad=True)
         Rt[R>1] = 1/R[R>1]
         Rr[R<1] = R[R<1]
 
@@ -1220,8 +1220,8 @@ class PEAQ(torch.nn.Module):
             Rt[:,k,:] = torch.sum(Rt[:,max(k-M1, 0):min(k+M2,R.shape[1]-1),:], dim=1)/M
             Rr[:,k,:] = torch.sum(Rr[:,max(k-M1, 0):min(k+M2,R.shape[1]-1),:], dim=1)/M
         
-        PCt = torch.zeros(R.shape)
-        PCr = torch.zeros(R.shape)
+        PCt = torch.zeros(R.shape, requires_grad=True)
+        PCr = torch.zeros(R.shape, requires_grad=True)
 
         PCt[:,:,0] = (1-a)*Rt[:,:,0]
         PCr[:,:,0] = (1-a)*Rr[:,:,0]
@@ -1236,8 +1236,8 @@ class PEAQ(torch.nn.Module):
         tau = 0.008 + (4.2/fc)
         a = torch.exp(-self.step/(self.fs*tau))
 
-        Eder = torch.zeros(x.shape, dtype=torch.double)
-        El = torch.zeros(x.shape, dtype=torch.double)
+        Eder = torch.zeros(x.shape, dtype=torch.double, requires_grad=True)
+        El = torch.zeros(x.shape, dtype=torch.double, requires_grad=True)
         Eder[:,:,0] = (1-a)*(self.fs/self.step)*torch.abs(torch.pow(x[:,:,0], 0.3))
         El[:,:,0] = (1-a)*(torch.pow(x[:,:,0], 0.3))
         for n in range(1,x.shape[-1]):
@@ -1268,8 +1268,8 @@ class PEAQ(torch.nn.Module):
         #   ADB_B
         #   EHS_B
         print('calc_MOV WIP')
-        ret1 = torch.empty([self.bsize, 5])
-        ret2 = torch.empty([self.bsize, 5])
+        ret1 = torch.empty([self.bsize, 5], requires_grad=True)
+        ret2 = torch.empty([self.bsize, 5], requires_grad=True)
         # mp = (t_mp, r_mp)
         MD1B = self.ModDiff(mp, 1, 1)
         TempWt = torch.sum(r_modEl.transpose(1,2)/(r_modEl.transpose(1,2)+100*Eth), dim=2)
@@ -1321,8 +1321,8 @@ class PEAQ(torch.nn.Module):
 
         FLTst, FLRef = torch.vsplit(FL, [self.bsize])
         ZeroThreshold = torch.amax(FLTst[:,:,921:], dim=2)
-        BWRef = torch.empty(FLTst.shape[0:2])
-        BWTst = torch.empty(FLTst.shape[0:2])
+        BWRef = torch.empty(FLTst.shape[0:2], requires_grad=True)
+        BWTst = torch.empty(FLTst.shape[0:2], requires_grad=True)
         for n in range(FLRef.shape[1]):
             nzs = torch.ge(FLRef[:,n,:921].transpose(0,1), 10+ZeroThreshold[:,n]).nonzero()
                 # returns a tensor of nonzero in the format [[i1, j1], ..., [in, jn]]
@@ -1331,7 +1331,7 @@ class PEAQ(torch.nn.Module):
                 BWRef[b,n] = torch.max(nzs[nzs[:,1]==b])+1
                 BWTst[b,n] = torch.max((FLTst[b,n,:int(BWRef[b,n])]>=5+ZeroThreshold[b,n]).nonzero())+1
         
-        BWx_B = torch.empty(self.bsize,2)
+        BWx_B = torch.empty(self.bsize,2, requires_grad=True)
         for b in range(BWRef.shape[0]):
             BWx_B[b,0] = torch.mean(BWRef[b,BWRef[b,:]>346])
             BWx_B[b,1] = torch.mean(BWTst[b,BWRef[b,:]>346])
@@ -1339,7 +1339,7 @@ class PEAQ(torch.nn.Module):
 
     def RDF(self, x):
         xm = x.max(dim=2).values
-        rdf = torch.empty(x.shape[0])
+        rdf = torch.empty(x.shape[0], requires_grad=True)
         for b in range(x.shape[0]):
             rdf[b] = xm[b,xm[b,:]>=1.5].shape[0]
         return rdf
@@ -1347,7 +1347,7 @@ class PEAQ(torch.nn.Module):
     def mfpd_adb(self, E):
         tE, rE = torch.vsplit(E, [self.bsize])
         Lkn = 0.3*torch.maximum(rE,tE)+0.7*tE
-        s = 1e30*torch.ones(Lkn.shape, dtype=torch.double)
+        s = 1e30*torch.ones(Lkn.shape, dtype=torch.double, requires_grad=True)
         s[Lkn>0] = 5.95072*((6.39468/Lkn[Lkn>0])**1.71332)+(9.01033e-11)*(Lkn[Lkn>0]**4)+(5.05622e-6)*(Lkn[Lkn>0]**3)-0.00102438*(Lkn[Lkn>0]**2)+0.0550197*Lkn[Lkn>0]-0.198719
         e = rE-tE
         a = (10**(-0.5213902276543247/(6-2*(e>0).short())))/s
@@ -1356,19 +1356,19 @@ class PEAQ(torch.nn.Module):
         Pc = 1-torch.prod(1-pc, dim=1)
         Qc = torch.sum(qc, dim=1)
 
-        Pc_curl = torch.empty(Pc.shape)
+        Pc_curl = torch.empty(Pc.shape, requires_grad=True)
         Pc_curl[0] = 0
         c0 = 0.9**(941/1881)                # should be ~equal to step_size/nfft
         #c1 = 0.99**(941/1881)
         c1 = 1                              # page 63, idk man
-        PMc = torch.zeros(Pc_curl.shape[0], 2)
+        PMc = torch.zeros(Pc_curl.shape[0], 2, requires_grad=True)
         for i in range(1,Pc_curl.shape[1]):
             Pc_curl[:,i] = (1-c0)*Pc[:,i]+c0*Pc_curl[:,i-1]
             PMc[:,1] = torch.maximum(c1*Pc_curl[:,i], PMc[:,0])
             PMc[:,0] = PMc[:,1]
         MFPD = PMc[:,-1]
         Qsum = torch.sum(Qc, dim=1)
-        ADB = torch.empty(Qsum.shape[0])
+        ADB = torch.empty(Qsum.shape[0], requires_grad=True)
         for i in range(Qsum.shape[0]):
             if (Pc[i,Pc[i,:]>0.5]).shape[0] > 0: # ndist
                 if Qsum[i] > 0:
@@ -1385,8 +1385,8 @@ class PEAQ(torch.nn.Module):
             # should always be 256
 
         # apparently the lag is over bands and so is the spectrum calculation
-        ehs = torch.empty(x.shape[0], x.shape[1])
-        C = torch.zeros(x.shape[0], x.shape[1], maxlag)
+        ehs = torch.empty(x.shape[0], x.shape[1], requires_grad=True)
+        C = torch.zeros(x.shape[0], x.shape[1], maxlag, requires_grad=True)
         C_norm = torch.sum(x*x,dim=-1)
         for lag in range(maxlag):
             C[:,:,lag] = torch.sum(x[:,:,:x.shape[2]-lag]*x[:,:,lag:],dim=-1)/C_norm
@@ -1446,7 +1446,7 @@ class PEAQ(torch.nn.Module):
         return np.sqrt(Z)*torch.sqrt(torch.sum(torch.square(x), dim=1)/N)
 
     def WinX(self, x):
-        WA = torch.zeros(x.shape[0])
+        WA = torch.zeros(x.shape[0], requires_grad=True)
         for i in range(x.shape[1]-1, 2, -1):
             WA += (torch.sum(torch.sqrt(x[:, i-2:i+1]), dim=1)/4)**4
         return torch.sqrt(WA/(x.shape[1]-3))
@@ -1622,6 +1622,10 @@ if __name__=="__main__":
     peaq = PEAQ()
     #sig = torch.randn((2,10000), dtype=torch.double)
     sig, fs = torchaudio.load('sample.wav')
-    sig = sig.repeat(2,1)
     dsig = torch.sgn(sig)*torch.sqrt(torch.abs(sig))
-    print(peaq(sig, dsig))
+    dsig = torch.cat((dsig,sig))
+    sig = sig.repeat(2,1)
+    ls = peaq(sig, dsig)
+    print(ls)
+    bkw = ls.backward()
+    print(bkw)
