@@ -209,13 +209,9 @@ class PEAQ(torch.nn.Module):
             
         # cut up into 2048* sample windows and apply Hann window
         # *wlen adjusted to fs to keep frequency resolution as similar to norm as possible
-        nwin = int(np.ceil((x_cat.shape[1]-self.nfft)/self.step)+1)
-        xw_nw = torch.zeros(x_cat.shape[0], nwin, self.nfft, dtype=torch.double, requires_grad=True)
-        for i in range(nwin-1):
-            xw_nw[:, i, :] = x_cat[:,i*self.step:(i*self.step)+self.nfft]*torch.hann_window(self.nfft, periodic=False)
-        xw_nw[:,nwin-1,:x_cat.shape[1]-(nwin-1)*self.step]=x_cat[:,(nwin-1)*self.step:]        
-        xw_nw[:,nwin-1,:] = xw_nw[:,nwin-1,:]*torch.hann_window(self.nfft, periodic=False)
-        
+        xw_nw = torch.nn.functional.pad(x_cat, (0, int(np.ceil((x_cat.shape[1]-self.nfft)/self.step))*self.step+self.nfft-x_cat.shape[1])).unfold(dimension=1, size=self.nfft, step=self.step)
+        xw_nw = xw_nw * torch.hann_window(self.nfft, periodic=False)
+
         # fft
         xw_nw = torch.fft.rfft(xw_nw, n=self.nfft, dim=2, norm='forward')
             # may be replaced with torch.stft()
@@ -1120,7 +1116,7 @@ class PEAQ(torch.nn.Module):
                              [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0],
                              [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0], 
                              [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.25510204081640897]],
-                             dtype=torch.double)
+                             dtype=torch.float)
         return torch.clamp(torch.matmul(x,Bark), min=0.000000000001)
             # Batch x wnum x wlen*
             # *number of critical bands
@@ -1138,11 +1134,10 @@ class PEAQ(torch.nn.Module):
         Ecurl = torch.zeros((uep.shape[0], uep.shape[2], uep.shape[2]), dtype=torch.double, requires_grad=True)
 
         for j in range(109):                    # across frequency bands
-            idx1 = torch.zeros(Z, dtype=torch.double, requires_grad=True)
-            idx2 = torch.zeros(Z, dtype=torch.double, requires_grad=True)
-            idx1[:j]=1
-            idx2[j:]=1
-            mu = torch.tensor(range(Z), requires_grad=True)
+            idx1 = (torch.arange(Z, dtype=torch.double) < j).float()
+            idx2 = (torch.arange(Z, dtype=torch.double) >= j).float()
+
+            mu = torch.tensor(range(Z), dtype=torch.double)
             d1 = torch.sum(torch.pow(10, (-res*(j-mu)*Sl*idx1)/10)*idx1)
             d2 = torch.sum(torch.pow(10, torch.einsum('i,bj->bji',res*(mu-j)*idx2, Su[:,:,j])/10)*idx2, dim=2)
             for n in range(uep.shape[1]):       # across windows (time)
@@ -1385,11 +1380,17 @@ class PEAQ(torch.nn.Module):
             # should always be 256
 
         # apparently the lag is over bands and so is the spectrum calculation
-        ehs = torch.empty(x.shape[0], x.shape[1], requires_grad=True)
-        C = torch.zeros(x.shape[0], x.shape[1], maxlag, requires_grad=True)
+        #ehs = torch.empty(x.shape[0], x.shape[1], requires_grad=True)
+        #C = torch.zeros(x.shape[0], x.shape[1], maxlag, requires_grad=True)
         C_norm = torch.sum(x*x,dim=-1)
+        #for lag in range(maxlag):
+        #    C[:,:,lag] = torch.sum(x[:,:,:x.shape[2]-lag]*x[:,:,lag:],dim=-1)/C_norm
+        
+        C_list = []
         for lag in range(maxlag):
-            C[:,:,lag] = torch.sum(x[:,:,:x.shape[2]-lag]*x[:,:,lag:],dim=-1)/C_norm
+            C_list.append(torch.sum(x[:,:,:x.shape[2]-lag]*x[:,:,lag:], dim=-1) / C_norm)
+        C = torch.stack(C_list, dim=-1)
+        
         C = C*torch.hann_window(maxlag).repeat(x.shape[0],x.shape[1],1)
             # windowed by normalized Hann window
         C = C-torch.mean(C,dim=-1,keepdim=True)
@@ -1624,6 +1625,7 @@ if __name__=="__main__":
     sig, fs = torchaudio.load('sample.wav')
     dsig = torch.sgn(sig)*torch.sqrt(torch.abs(sig))
     dsig = torch.cat((dsig,sig))
+    dsig.requires_grad_(requires_grad=True)
     sig = sig.repeat(2,1)
     ls = peaq(sig, dsig)
     print(ls)
