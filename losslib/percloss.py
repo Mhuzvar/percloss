@@ -1124,7 +1124,6 @@ class PEAQ(torch.nn.Module):
             # *number of critical bands
 
     def freq_smear(self, fc, uep):
-        print('##################\nfrequency smearing needs optimization!\n##################')
         L = 10*torch.log10(uep)
         Su_j0 = -24-(230/fc)
         Su = Su_j0+0.2*L
@@ -1133,7 +1132,7 @@ class PEAQ(torch.nn.Module):
         res = 0.25  # Bark scale resolution for basic version
         Z = 109     # maximum of j (number of frequency bands) 
         
-        mu = torch.arange(Z, dtype=torch.double)
+        #mu = torch.arange(Z, dtype=torch.double)
         
         jmink = torch.empty(Z,Z, dtype=torch.double)
         jminkvals = []
@@ -1237,13 +1236,19 @@ class PEAQ(torch.nn.Module):
         tau = 0.008 + (4.2/fc)
         a = torch.exp(-self.step/(self.fs*tau))
 
-        Eder = torch.zeros(x.shape, dtype=torch.double)
-        El = torch.zeros(x.shape, dtype=torch.double)
-        Eder[:,:,0] = (1-a)*(self.fs/self.step)*torch.abs(torch.pow(x[:,:,0], 0.3))
-        El[:,:,0] = (1-a)*(torch.pow(x[:,:,0], 0.3))
-        for n in range(1,x.shape[-1]):
-            Eder[:,:,n] = a*Eder[:,:,n-1] + (1-a)*(self.fs/self.step)*torch.abs(torch.pow(x[:,:,n], 0.3) - torch.pow(x[:,:,n-1], 0.3))
-            El[:,:,n] = a*El[:,:,n-1] + (1-a)*torch.pow(x[:,:,n], 0.3)
+        af = torch.cat((torch.ones(a.shape[0],1), torch.unsqueeze(a,-1)), -1)
+        bf = torch.cat((1-torch.unsqueeze(a,-1), torch.zeros(a.shape[0],1)), -1)
+        E2pow = torch.pow(x, 0.3)
+        E2dif = (self.fs/self.step)*torch.abs(E2pow - torch.cat((torch.zeros(x.shape[0], x.shape[1], 1), E2pow[:,:,:-1]), 2))
+        Eder = torchaudio.functional.lfilter(E2dif, af, bf, clamp=False)
+        El = torchaudio.functional.lfilter(E2pow, af, bf, clamp=False)
+        #Eder = torch.zeros(x.shape, dtype=torch.double)
+        #El = torch.zeros(x.shape, dtype=torch.double)
+        #Eder[:,:,0] = (1-a)*(self.fs/self.step)*torch.abs(torch.pow(x[:,:,0], 0.3))
+        #El[:,:,0] = (1-a)*(torch.pow(x[:,:,0], 0.3))
+        #for n in range(1,x.shape[-1]):
+        #    Eder[:,:,n] = a*Eder[:,:,n-1] + (1-a)*(self.fs/self.step)*torch.abs(torch.pow(x[:,:,n], 0.3) - torch.pow(x[:,:,n-1], 0.3))
+        #    El[:,:,n] = a*El[:,:,n-1] + (1-a)*torch.pow(x[:,:,n], 0.3)
         Mod = Eder/(1+(El/0.3))
         return Mod, El
     
@@ -1285,6 +1290,7 @@ class PEAQ(torch.nn.Module):
         #beta = torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep)
         #NL = ((Eth/st)**0.23)*(((1+torch.clamp(st*t_Ep-sr*r_Ep,min=0)/(Eth+sr*r_Ep*beta))**0.23)-1)
         NL = torch.pow(Eth/st,0.23)*(torch.pow(1+torch.clamp(st*t_Ep.transpose(1,2)-sr*r_Ep.transpose(1,2),min=0)/(Eth+sr*r_Ep.transpose(1,2)*torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep).transpose(1,2)),0.23)-1)
+        print('############################\nNL calculation creates NaNs!\n############################')
         ret2[2] = torch.mean(self.RmsX(NL), dim=-1)   # RmsNoiseLoud_B
         # not sure if temporal and spectral averaging is in correct order
 
@@ -1456,11 +1462,8 @@ class PEAQ(torch.nn.Module):
         return np.sqrt(Z)*torch.sqrt(torch.sum(torch.square(x), dim=1)/N)
 
     def WinX(self, x):
-        print('##################\nWinX lacks autograd compatibility!\n##################')
-        WA = torch.zeros(x.shape[0])
-        for i in range(x.shape[1]-1, 2, -1):
-            WA += (torch.sum(torch.sqrt(x[:, i-2:i+1]), dim=1)/4)**4
-        return torch.sqrt(WA/(x.shape[1]-3))
+        print('##################\nWinX only works for BxN shape tensors!\n##################')
+        return torch.sqrt(torch.sum(torch.pow(torch.mean(x.unfold(dimension=1, size=4, step=1), dim=-1), 4), dim=-1)/(x.shape[-1]-3))
     
     '''
     def ehs_peak(self, x):
