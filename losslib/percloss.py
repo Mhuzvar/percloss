@@ -1166,17 +1166,14 @@ class PEAQ(torch.nn.Module):
         return x/torch.pow(10, m/10)
 
     def pat_adap_LP(self, x):
-        print('##################\npat_adap_LP lacks autograd compatibility!\n##################')
         fc = wf.f_c()
         tau = 0.008 + (4.2/fc)
         a = torch.exp(-self.step/(self.fs*tau))
 
-        P = torch.zeros(x.shape)
-        P[:,:,0] = x[:,:,0]*(1-a)
-        for i in range(1, P.shape[-1]):
-            P[:,:,i] = P[:,:,i-1]*a + x[:,:,i]*(1-a)
-        
-        return P
+        af = torch.cat((torch.ones(a.shape[0],1), -torch.unsqueeze(a,-1)), -1)
+        bf = torch.cat((1-torch.unsqueeze(a,-1), torch.zeros(a.shape[0],1)), -1)
+
+        return torchaudio.functional.lfilter(x, af, bf, clamp=False)
     
     def Lev_Corr(self, Pt, Pr):
         LC = torch.square(torch.sum(torch.sqrt(Pt*Pr), dim=1)/torch.sum(Pt, dim=1))
@@ -1231,24 +1228,17 @@ class PEAQ(torch.nn.Module):
         return Et*PCt, Er*PCr
     
     def calc_mod(self, x):
-        print('##################\ncalc_mod lacks autograd compatibility!\n##################')
         fc = wf.f_c()
         tau = 0.008 + (4.2/fc)
         a = torch.exp(-self.step/(self.fs*tau))
 
-        af = torch.cat((torch.ones(a.shape[0],1), torch.unsqueeze(a,-1)), -1)
+        af = torch.cat((torch.ones(a.shape[0],1), -torch.unsqueeze(a,-1)), -1)
         bf = torch.cat((1-torch.unsqueeze(a,-1), torch.zeros(a.shape[0],1)), -1)
         E2pow = torch.pow(x, 0.3)
         E2dif = (self.fs/self.step)*torch.abs(E2pow - torch.cat((torch.zeros(x.shape[0], x.shape[1], 1), E2pow[:,:,:-1]), 2))
         Eder = torchaudio.functional.lfilter(E2dif, af, bf, clamp=False)
         El = torchaudio.functional.lfilter(E2pow, af, bf, clamp=False)
-        #Eder = torch.zeros(x.shape, dtype=torch.double)
-        #El = torch.zeros(x.shape, dtype=torch.double)
-        #Eder[:,:,0] = (1-a)*(self.fs/self.step)*torch.abs(torch.pow(x[:,:,0], 0.3))
-        #El[:,:,0] = (1-a)*(torch.pow(x[:,:,0], 0.3))
-        #for n in range(1,x.shape[-1]):
-        #    Eder[:,:,n] = a*Eder[:,:,n-1] + (1-a)*(self.fs/self.step)*torch.abs(torch.pow(x[:,:,n], 0.3) - torch.pow(x[:,:,n-1], 0.3))
-        #    El[:,:,n] = a*El[:,:,n-1] + (1-a)*torch.pow(x[:,:,n], 0.3)
+
         Mod = Eder/(1+(El/0.3))
         return Mod, El
     
@@ -1290,7 +1280,6 @@ class PEAQ(torch.nn.Module):
         #beta = torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep)
         #NL = ((Eth/st)**0.23)*(((1+torch.clamp(st*t_Ep-sr*r_Ep,min=0)/(Eth+sr*r_Ep*beta))**0.23)-1)
         NL = torch.pow(Eth/st,0.23)*(torch.pow(1+torch.clamp(st*t_Ep.transpose(1,2)-sr*r_Ep.transpose(1,2),min=0)/(Eth+sr*r_Ep.transpose(1,2)*torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep).transpose(1,2)),0.23)-1)
-        print('############################\nNL calculation creates NaNs!\n############################')
         ret2[2] = torch.mean(self.RmsX(NL), dim=-1)   # RmsNoiseLoud_B
         # not sure if temporal and spectral averaging is in correct order
 
