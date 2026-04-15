@@ -259,94 +259,14 @@ class PEAQ(torch.nn.Module):
         # time domain spreading
         tau = 0.008+(2.2/fc)
         a_vec = torch.exp(-4/(187.5*tau))
-        ep = torch.zeros(uep.shape)
-        for i in range(1, ep.shape[-1]):
-            ep[:,:,i] = ep[:,:,i-1]*a_vec + uep[:,:,i]*(1-a_vec)
-            # inefficient for longer signals, revisit later
-        #for i, a in enumerate(a_vec):
-        #    print(a)
-        #    ep[:,i,1:] = torchaudio.functional.lfilter(uep[:,:,1:],a,1-a,clamp=False)
-            # shows an error I could not solve
+        af = torch.cat((torch.ones(a_vec.shape[0],1), -torch.unsqueeze(a_vec,-1)), -1)
+        bf = torch.cat((1-torch.unsqueeze(a_vec,-1), torch.zeros(a_vec.shape[0],1)), -1)
+        
+        ep = torchaudio.functional.lfilter(torch.cat((torch.zeros(uep.shape[0],uep.shape[1],1), uep[:,:,1:]), dim=-1), af, bf, clamp=False)
         ep=torch.maximum(ep,uep)
 
         
         return ep, mp, mod_eline, xw, xw_nw, xw_nc, noisep, EHS_B
-
-    '''
-    def pem_old(self, x):
-        nfft = int(np.floor(2048*(self.fs/48000)))
-        step = int(nfft//2)+1
-
-        imin = 3
-        imax = 769
-            # to remove unnecessary spectral content
-
-        if len(x.shape) == 1:
-            x = x.unsqueeze(0)
-
-        # cut up into 2048* sample windows and apply Hann window
-        # *wlen adjusted to 44.1 kHz fs to keep frequency resolution as similar as possible
-        nwin = int(np.ceil((x.shape[1]-nfft)/step)+1)
-        xw_nw = torch.zeros(x.shape[0], nwin, nfft, dtype=torch.double)
-        for i in range(nwin-1):
-            xw_nw[:, i, :] = x[:,i*step:(i*step)+nfft]*torch.hann_window(nfft, periodic=False)
-        xw_nw[:,nwin-1,:x.shape[1]-(nwin-1)*step]=x[:,(nwin-1)*step:]
-        xw_nw[:,nwin-1,:] = xw_nw[:,nwin-1,:]*torch.hann_window(nfft, periodic=False)
-
-        # fft
-        xw_nw = torch.fft.rfft(xw_nw, n=nfft, dim=2, norm='forward')  # check dimensionality
-            # may be replaced with torch.stft()
-            # ! ITU-R BS.1387-2 specifies normalization by 1/nfft
-        #xw_nw = xw_nw[:,:,imin:imax]
-            #done later
-        #print(xw_nw.shape) # Batch x wnum x spectrum length
-
-        # rectification
-            # probably solved by the torch.abs() in weighting step?
-
-        #scaling of the input signals
-        Lp = 92                                                 # default value
-        print('##################\ninput signal scaling likely wrong!\n##################')
-        fac = (10**(Lp/20))/self.normfac
-        xw_nw = xw_nw[:,:,:942]*fac
-
-        # outer and middle ear weighting function
-        print('##################\n spectra shortened a step too soon!\n##################')
-        f = np.linspace(0,self.fs,int(2048*(self.fs/48000)),endpoint=False)
-            # approximately f = k*23.4375
-        f = f[imin:imax]
-        W = -0.6*3.64*((f/1000)**(-0.8)) + 6.5*np.exp(-0.6*((f/1000)-3.3)**2) - (1e-3)*(f/1000)**3.6
-        xw = torch.abs(xw_nw[:,:,imin:imax])*torch.from_numpy(10**(W/20))
-            # this should work fine
-
-        # critical band grouping
-        xw = self.crit_group(torch.abs(xw)**2)
-
-        # adding internal noise
-        fc = wf.f_c()
-        W = 10**(0.4*0.364*((fc/1000)**(-0.8)))
-        uep = xw + torch.matmul(torch.ones(xw.shape, dtype=torch.double), torch.diag(W))
-
-        # frequency domain spreading
-        uep = self.freq_smear(fc, uep)
-            # changes dim to batch x frequency x time
-        mp, mod_eline = self.calc_mod(uep)
-
-        # time domain spreading
-        tau = 0.008+(2.2/fc)
-        a_vec = np.exp(-4/(187.5*tau))
-        ep = torch.zeros(uep.shape)
-        for i in range(1, ep.shape[-1]):
-            ep[:,:,i] = ep[:,:,i-1]*a_vec + uep[:,:,i]*(1-a_vec)
-            # inefficient for longer signals, revisit later
-        #for i, a in enumerate(a_vec):
-        #    print(a)
-        #    ep[:,i,1:] = torchaudio.functional.lfilter(uep[:,:,1:],a,1-a,clamp=False)
-            # shows an error I could not solve
-        ep=torch.maximum(ep,uep)
-
-        return ep, mp, mod_eline, xw, xw_nw
-    '''
 
     def crit_group(self, x):
         print('##################\ncritband grouping fs not generalized!\n##################')
@@ -1160,7 +1080,7 @@ class PEAQ(torch.nn.Module):
     def calc_mask(self, x):
         res = 0.25
 
-        m = 3*torch.ones(x.shape, dtype=torch.double, requires_grad=True)
+        m = 3*torch.ones(x.shape, dtype=torch.double)
         m[:,int(np.ceil(12/res)):,:]=0.25*torch.arange(np.ceil(12/res),x.shape[1], dtype=torch.double).unsqueeze(-1)*res
 
         return x/torch.pow(10, m/10)
@@ -1183,47 +1103,63 @@ class PEAQ(torch.nn.Module):
     def lev_adap(self, Px):
         Pt, Pr = torch.vsplit(Px, [self.bsize])
         LevCorr = self.Lev_Corr(Pt, Pr)
-        Pt[LevCorr<1] = Pt[LevCorr<1]*LevCorr[LevCorr<1]
-        Pr[LevCorr>1] = Pr[LevCorr>1]/LevCorr[LevCorr>1]
-        return Pt, Pr
+        LCor = torch.zeros(LevCorr.shape)
+        LCor[LevCorr<1]=1
+        TCor = (1-LCor)+LCor*LevCorr
+        RCor = LCor+(1-LCor)/LevCorr
+
+        return Pt*TCor, Pr*RCor
     
     def pat_adap(self, Et, Er):
-        print('##################\npat_adap lacks autograd compatibility!\n##################')
         fc = wf.f_c()
         tau = 0.008 + (4.2/fc)
         a = torch.exp(-self.step/(self.fs*tau))
-        a = a.repeat(Et.shape[-1],1).transpose(0,1)
-        mask = torch.zeros(Et.shape)
-        R = torch.zeros(Et.shape, dtype=torch.double)
-        for n in range(R.shape[-1]):
-            mask[:,:,-n-1]=1
-            numer = torch.sum(mask*Et*Er*torch.fliplr(a**torch.arange(0,Et.shape[-1])), dim=2)
-            denom = torch.sum(mask*Er*Er*torch.fliplr(a**torch.arange(0,Et.shape[-1])), dim=2)
-            R[:,:,n] = numer/denom
-                # ! need to fix situations where denom is 0
-        a = torch.exp(-self.step/(self.fs*tau))
-            # returned to minimal size for later use
+
+        af = torch.zeros(a.shape[0],Et.shape[-1], dtype=torch.double)
+        af[:,0]=1
+        bf = torch.pow(a.repeat(Et.shape[-1],1).transpose(0,1), torch.arange(Et.shape[-1]))
+        num = torchaudio.functional.lfilter(Et*Er, af, bf, clamp=False)
+        den = torchaudio.functional.lfilter(Er*Er, af, bf, clamp=False)
+        R = num/den
         
-        Rt = torch.ones(R.shape, dtype=torch.double)
-        Rr = torch.ones(R.shape, dtype=torch.double)
-        Rt[R>1] = 1/R[R>1]
-        Rr[R<1] = R[R<1]
+        Rcor = torch.zeros(R.shape)
+        Rcor[R<1]=1
+        Rt = Rcor+(1-Rcor)/R
+        Rr = (1-Rcor)+Rcor*R
+        #Rt = torch.ones(R.shape, dtype=torch.double)
+        #Rr = torch.ones(R.shape, dtype=torch.double)
+        #Rt[R>1] = 1/R[R>1]
+        #Rr[R<1] = R[R<1]
 
         M = 8
         M1 = 3
         M2 = 4
-        for k in range(R.shape[1]):
-            Rt[:,k,:] = torch.sum(Rt[:,max(k-M1, 0):min(k+M2,R.shape[1]-1),:], dim=1)/M
-            Rr[:,k,:] = torch.sum(Rr[:,max(k-M1, 0):min(k+M2,R.shape[1]-1),:], dim=1)/M
-        
-        PCt = torch.zeros(R.shape)
-        PCr = torch.zeros(R.shape)
+        Rtl = []
+        Rrl = []
+        for k in range(M2):
+            Rtl.append(torch.sum(Rt[:,Rr.shape[1]-M1-k-1:,:], dim=1)/(M1+k+1))
+            Rrl.append(torch.sum(Rr[:,Rr.shape[1]-M1-k-1:,:], dim=1)/(M1+k+1))
+        Rtf_end = torch.stack(Rtl[::-1], dim=1)
+        Rrf_end = torch.stack(Rrl[::-1], dim=1)
 
-        PCt[:,:,0] = (1-a)*Rt[:,:,0]
-        PCr[:,:,0] = (1-a)*Rr[:,:,0]
-        for n in range(1,PCt.shape[-1]):
-            PCt[:,:,n] = a*PCt[:,:,n-1]+(1-a)*Rt[:,:,n]
-            PCr[:,:,n] = a*PCr[:,:,n-1]+(1-a)*Rr[:,:,n]
+        af = torch.zeros(M, dtype=torch.double)
+        af[0]=1
+        bf = torch.ones(M, dtype=torch.double)
+
+        Rtf = torchaudio.functional.lfilter(Rt.transpose(1,2), af, bf, clamp=False)
+        Rrf = torchaudio.functional.lfilter(Rr.transpose(1,2), af, bf, clamp=False)
+
+        Mdiv = torch.clamp(torch.arange(Rtf.shape[-1]-M2)+M2+1, max=M)
+        Rtf = (Rtf[:,:,M2:]/Mdiv).transpose(1,2)
+        Rrf = (Rrf[:,:,M2:]/Mdiv).transpose(1,2)
+        
+        Rt = torch.cat((Rtf, Rtf_end), dim=1)
+        Rr = torch.cat((Rrf, Rrf_end), dim=1)
+        
+        af = torch.cat((torch.ones(a.shape[0],1), -torch.unsqueeze(a,-1)), -1)
+        bf = torch.cat((1-torch.unsqueeze(a,-1), torch.zeros(a.shape[0],1)), -1)
+        PCt = torchaudio.functional.lfilter(Rt, af, bf, clamp=False)
+        PCr = torchaudio.functional.lfilter(Rr, af, bf, clamp=False)
         
         return Et*PCt, Er*PCr
     
