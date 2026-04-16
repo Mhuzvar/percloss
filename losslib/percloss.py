@@ -1249,27 +1249,20 @@ class PEAQ(torch.nn.Module):
         return 100*torch.sum(md, dim=1)/xt.shape[1]
 
     def BWidth(self, FL):
-        print('BWidth WIP')
-        print('##################\nBWidth lacks autograd compatibility!\n##################')
-
         FLTst, FLRef = torch.vsplit(FL, [self.bsize])
         ZeroThreshold = torch.amax(FLTst[:,:,921:], dim=2)
-        BWRef = torch.empty(FLTst.shape[0:2])
-        BWTst = torch.empty(FLTst.shape[0:2])
-        for n in range(FLRef.shape[1]):
-            nzs = torch.ge(FLRef[:,n,:921].transpose(0,1), 10+ZeroThreshold[:,n]).nonzero()
-                # returns a tensor of nonzero in the format [[i1, j1], ..., [in, jn]]
-                # nonzero elements are then at FLRef[nzs[k,i1], n, nzs[k, i2]]
-            for b in range(FLRef.shape[0]):
-                BWRef[b,n] = torch.max(nzs[nzs[:,1]==b])+1
-                BWTst[b,n] = torch.max((FLTst[b,n,:int(BWRef[b,n])]>=5+ZeroThreshold[b,n]).nonzero())+1
+        ges = torch.ge(FLRef[:,:,:921], 10+ZeroThreshold.repeat(921,1,1).transpose(0,1).transpose(1,2)).float()
+        BWRef=921-torch.argmax(torch.flip(ges, dims=[-1]), dim=2).float()
         
-        BWx_B = torch.empty(self.bsize,2)
-        for b in range(BWRef.shape[0]):
-            BWx_B[b,0] = torch.mean(BWRef[b,BWRef[b,:]>346])
-            BWx_B[b,1] = torch.mean(BWTst[b,BWRef[b,:]>346])
-        return BWx_B[:,0], BWx_B[:,1]
+        gest = torch.ge(FLTst[:,:,:921], 5+ZeroThreshold.repeat(921,1,1).transpose(0,1).transpose(1,2)).float()
+        tstmask = torch.arange(921) < BWRef.unsqueeze(-1)
+        BWTst = 921-torch.argmax(torch.flip(gest*tstmask, dims=[-1]), dim=2).float()
 
+        gts = torch.gt(BWRef, 346)
+        BWR_B = torch.sum(BWRef*gts, dim=1)/torch.sum(gts, dim=-1)
+        BWT_B = torch.sum(BWTst*gts, dim=1)/torch.sum(gts, dim=-1)
+        return BWR_B, BWT_B
+    
     def RDF(self, x):
         print('##################\nRDF lacks autograd compatibility!\n##################')
         xm = x.max(dim=2).values
@@ -1558,6 +1551,7 @@ class ViSQOLoss(torch.nn.Module):
         return spectrogram
 
 if __name__=="__main__":
+    torch.autograd.set_detect_anomaly(True)
     peaq = PEAQ()
     #sig = torch.randn((2,10000), dtype=torch.double)
     sig, fs = torchaudio.load('sample.wav')
