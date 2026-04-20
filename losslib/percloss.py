@@ -1204,7 +1204,7 @@ class PEAQ(torch.nn.Module):
         ret2 = 5*[0]
         # mp = (t_mp, r_mp)
         MD1B = self.ModDiff(mp, 1, 1)
-        TempWt = torch.sum(r_modEl.transpose(1,2)/(r_modEl.transpose(1,2)+100*Eth), dim=2)
+        TempWt = torch.sum(r_modEl.transpose(1,2)/(r_modEl.transpose(1,2)+100*torch.pow(Eth,0.3)), dim=2)
         ret1[3] = self.WinX(MD1B)
             # WinModDiff1_B
         ret2[0] = self.AvgX(MD1B, W=TempWt)
@@ -1264,12 +1264,9 @@ class PEAQ(torch.nn.Module):
         return BWR_B, BWT_B
     
     def RDF(self, x):
-        print('##################\nRDF lacks autograd compatibility!\n##################')
-        xm = x.max(dim=2).values
-        rdf = torch.empty(x.shape[0])
-        for b in range(x.shape[0]):
-            rdf[b] = xm[b,xm[b,:]>=1.5].shape[0]
-        return rdf
+        xm = torch.amax(x, dim=2)
+        fms = torch.ge(xm, 1.5)
+        return torch.sum(fms, dim=1)
 
     def mfpd_adb(self, E):
         print('##################\nmfpd_adb lacks autograd compatibility!\n##################')
