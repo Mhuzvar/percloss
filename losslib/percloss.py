@@ -123,7 +123,7 @@ class cd_mfcc(torch.nn.Module):
 class PEAQ(torch.nn.Module):
     def __init__(self, fs=44100):
         super().__init__()
-        if fs<2*1019.5:
+        if fs<2040:
             raise Exception(f"Cannot calculate normalization factor for fs = {fs} Hz!")
         elif fs<36000:
             print("\x1b[0;37;43mWarning:\x1b[0m fs lower than 36 kHz may introduce problems during calculation!")
@@ -192,7 +192,7 @@ class PEAQ(torch.nn.Module):
         x = (MOVs-amin)/(amax-amin)
         nodes = torch.matmul(x,torch.tensor([[-0.502657,  0.436333,  1.219602],[ 4.307481,  3.246017,  1.123743],[ 4.984241, -2.211189, -0.192096],[ 0.051056, -1.762424,  4.331315],[ 2.321580,  1.789971, -0.754560],[-5.303901, -3.452257, -10.814982],[ 2.730991, -6.111805,  1.519223],[ 0.624950, -1.331523, -5.955151],[ 3.102889,  0.871260, -5.922878],[-1.051468, -0.939882, -0.142913],[-1.804679, -0.503610, -0.620456]], dtype=torch.double))
         nodes = nodes+torch.tensor([-2.518254,0.654841,-2.207228])
-        nodes = 1/(1+torch.exp(-nodes))
+        nodes = 1/(1+torch.exp(torch.clamp(-nodes, max=7.0978e2)))
         DI = torch.matmul(nodes,torch.tensor([-3.817048,4.107138,4.629582], dtype=torch.double))-0.307594
         ODG = -3.98+4.2/(1+torch.exp(-DI))
         return torch.mean(ODG)
@@ -1179,7 +1179,6 @@ class PEAQ(torch.nn.Module):
         return Mod, El
     
     def calc_loud(self, E):
-        print('Assuming atn() in the norm means arc tangent!')
         f =  wf.f_c()
         Eth = torch.pow(10, 0.364*torch.pow(f/1000, -0.8))
         s = torch.pow(10, (-2-2.05*torch.arctan(f/4000)-0.75*torch.arctan(torch.square(f/1600)))/10)
@@ -1199,7 +1198,6 @@ class PEAQ(torch.nn.Module):
         #   MFPD_B
         #   ADB_B
         #   EHS_B
-        print('calc_MOV WIP')
         ret1 = 5*[0]
         ret2 = 5*[0]
         # mp = (t_mp, r_mp)
@@ -1269,40 +1267,37 @@ class PEAQ(torch.nn.Module):
         return torch.sum(fms, dim=1)
 
     def mfpd_adb(self, E):
-        print('##################\nmfpd_adb lacks autograd compatibility!\n##################')
         tE, rE = torch.vsplit(E, [self.bsize])
         Lkn = 0.3*torch.maximum(rE,tE)+0.7*tE
-        s = 1e30*torch.ones(Lkn.shape, dtype=torch.double)
-        s[Lkn>0] = 5.95072*((6.39468/Lkn[Lkn>0])**1.71332)+(9.01033e-11)*(Lkn[Lkn>0]**4)+(5.05622e-6)*(Lkn[Lkn>0]**3)-0.00102438*(Lkn[Lkn>0]**2)+0.0550197*Lkn[Lkn>0]-0.198719
+        s = torch.le(Lkn,0)*1e30+torch.gt(Lkn, 0)*(5.95072*torch.pow(6.39468/(Lkn+(Lkn<=0)), 1.71332)+(9.01033e-11)*torch.pow(Lkn, 4)+(5.05622e-6)*torch.pow(Lkn, 3)-0.00102438*torch.square(Lkn)+0.0550197*Lkn-0.198719)
         e = rE-tE
-        a = (10**(-0.5213902276543247/(6-2*(e>0).short())))/s
-        pc = 1-10**(-a*(torch.pow(e,(6-2*(e>0).short()))))
-        qc = torch.abs(torch.trunc(e))/s    # assuming INT() is rounding towards zero
+        b = (4*torch.gt(rE, tE)+6*torch.le(rE,tE)).to(dtype=torch.double)
+        a = torch.pow(10, -0.5213902276543247/b)/s
+        pc = 1-torch.pow(10, -a*torch.pow(e, b))
+        qc = torch.abs(torch.trunc(e))/s
+            # INT() is assumed to mean rounding towards zero
+            # it has been noted in literature, that floor may be more appropriate
         Pc = 1-torch.prod(1-pc, dim=1)
         Qc = torch.sum(qc, dim=1)
 
-        Pc_curl = torch.empty(Pc.shape)
-        Pc_curl[0] = 0
-        c0 = 0.9**(941/1881)                # should be ~equal to step_size/nfft
+        #c0 = 0.9**(941/1881)
+        c0 = 0.9
+            # should be 0.9**(step_size/(nfft/2))
+            # since step_size is nfft/2, c0 is 0.9**1, so 0.9
         #c1 = 0.99**(941/1881)
-        c1 = 1                              # page 63, idk man
-        PMc = torch.zeros(Pc_curl.shape[0], 2)
-        for i in range(1,Pc_curl.shape[1]):
-            Pc_curl[:,i] = (1-c0)*Pc[:,i]+c0*Pc_curl[:,i-1]
-            PMc[:,1] = torch.maximum(c1*Pc_curl[:,i], PMc[:,0])
-            PMc[:,0] = PMc[:,1]
-        MFPD = PMc[:,-1]
-        Qsum = torch.sum(Qc, dim=1)
-        ADB = torch.empty(Qsum.shape[0])
-        for i in range(Qsum.shape[0]):
-            if (Pc[i,Pc[i,:]>0.5]).shape[0] > 0: # ndist
-                if Qsum[i] > 0:
-                    ADB[i] = np.log10(Qsum[i]/(Pc[i,Pc[i,:]>0.5]).shape[0])
-                else:
-                    ADB[i] = -0.5
-            else:
-                ADB[i] = 0
+            # c1 should be 0.99 for the ame reason c0 is 0.9
+            # but page 63 specifies it to be 1
+            # this leads to it not being needed at all
 
+        af = torch.tensor([1, -c0], dtype=Pc.dtype)
+        bf = torch.tensor([1-c0, 0], dtype=Pc.dtype)
+        Pc_curl = torchaudio.functional.lfilter(Pc, af, bf, clamp=False)
+        MFPD = torch.amax(torch.clamp(Pc_curl, min=0), dim=-1)
+        
+        Qsum = torch.sum(Qc, dim=1)
+        n_dist = torch.sum(torch.gt(Pc, 0.5), dim=1)
+        ADB = torch.gt(n_dist, 0)*(torch.gt(Qsum,0)*torch.log10((Qsum+torch.le(Qsum,0))/(n_dist+torch.le(n_dist, 0)))-0.5*torch.le(Qsum,0))
+        
         return MFPD, ADB
             
     def ehs(self, x):
