@@ -131,8 +131,6 @@ class PEAQ(torch.nn.Module):
         self.nfft = int(np.floor(2048*(self.fs/48000)))
         self.step = int(self.nfft//2)+1
         self.get_normfac()
-
-        print("temp print")
         
     def get_normfac(self):
         # calculate from 10 frames of 0 dB full scale 1019.5 Hz sine wave
@@ -158,7 +156,7 @@ class PEAQ(torch.nn.Module):
         # come up with a playback level estimation
         #t_ep, t_mp, t_modEl, t_cb, t_sp = self.pem_old(predictions)
         #r_ep, r_mp, r_modEl, r_cb, r_sp = self.pem_old(targets)
-        ep, mp, modEl, cb, sp, spw, noisep, MOVs[5] = self.pem(predictions, targets)
+        ep, mp, modEl, cb, sp, spw, noisep, MOVs[5], Eth = self.pem(predictions, targets)
             # reference is always the latter half in batch
             # MOV index 5 is EHS_B (p. 68)
 
@@ -175,9 +173,10 @@ class PEAQ(torch.nn.Module):
             # level adaptation
         t_Ep, r_Ep = self.pat_adap(t_slp, r_slp)
             # spectrally adapted patterns E_{P,x}
-        
+
         # specific loudness patterns
-        N, Eth = self.calc_loud(ep)
+        #N, Eth = self.calc_loud(ep)
+            # Neither of these is ever used in the MOVs calculation
 
         # probably unnecessary
         #t_epa = self.calc_adap(t_ep)
@@ -186,6 +185,7 @@ class PEAQ(torch.nn.Module):
         # calculation of remaining MOVs
         MOVs[:5], MOVs[6:] = self.calc_MOV(mp, modEl[self.bsize:,:,:], Eth, t_Ep, r_Ep, 20*torch.log10(torch.abs(sp)), noisep, msk.transpose(1,2), ep)
         MOVs = torch.stack(MOVs, dim=-1)
+        
         amin = torch.tensor([393.915565, 361.965332, -24.046116,   1.110661, -0.206623,  0.074318,  1.113683,    0.950345,  0.029985, 0.000101, 0])
         amax = torch.tensor([921       , 881.131226,  16.212030, 107.137772,  2.886017, 13.933351, 63.257874, 1145.018555, 14.819740, 1       , 1])
         
@@ -266,7 +266,7 @@ class PEAQ(torch.nn.Module):
         ep=torch.maximum(ep,uep)
 
         
-        return ep, mp, mod_eline, xw, xw_nw, xw_nc, noisep, EHS_B
+        return ep, mp, mod_eline, xw, xw_nw, xw_nc, noisep, EHS_B, W
 
     def crit_group(self, x):
         print('##################\ncritband grouping fs not generalized!\n##################')
@@ -1063,17 +1063,17 @@ class PEAQ(torch.nn.Module):
         jmink[i,j] = -jminkvals
         jmink.T[i,j] = jminkvals
         Ecurl = torch.triu((torch.ones(Z,Z, dtype=torch.double)*Sl))+torch.tril(Su_j0.repeat(Z,1).transpose(0,1))
-        Ecurl = torch.pow(10, (res*jmink*Ecurl)/10)
+        Ecurl = torch.pow(10, torch.clamp((res*jmink*Ecurl)/10, max=10*np.log10(1.79769e308)))
         Ecurl = Ecurl/torch.sum(Ecurl, dim=1)
 
         # Su is shape [b, n, k] and must be transposed to be broadcastable
         Eline = torch.triu((torch.ones(Z,Z, dtype=torch.double)*Sl))+torch.tril(Su.repeat(Z,1,1,1).transpose(0,1).transpose(1,2).transpose(2,3))
-        Eline = torch.pow(10, (res*jmink*Eline)/10)*torch.pow(10, L/10).repeat(Z,1,1,1).transpose(0,1).transpose(1,2).transpose(2,3)
+        Eline = torch.pow(10, torch.clamp((res*jmink*Eline)/10, max=10*np.log10(1.79769e308)))*torch.pow(10, torch.clamp(L/10, max=10*np.log10(1.79769e308))).repeat(Z,1,1,1).transpose(0,1).transpose(1,2).transpose(2,3)
         Eline = Eline/torch.sum(Eline, dim=2).repeat(Z,1,1,1).transpose(0,1).transpose(1,2).transpose(2,3)
         
-        NormSP_inv = 1/torch.pow(torch.sum(torch.pow(Ecurl, 0.4), dim=1), 1/0.4)
+        NormSP_inv = 1/torch.pow(torch.clamp(torch.sum(torch.pow(Ecurl, 0.4), dim=1), max=(1.79769e308)**0.4), 1/0.4)
         
-        E2 = torch.pow(torch.sum(Eline**0.4, dim=2), (1/0.4))*NormSP_inv
+        E2 = torch.pow(torch.clamp(torch.sum(Eline**0.4, dim=2), max=(1.79769e308)**0.4), (1/0.4))*NormSP_inv
 
         return E2.transpose(1,2)
 
@@ -1083,7 +1083,7 @@ class PEAQ(torch.nn.Module):
         m = 3*torch.ones(x.shape, dtype=torch.double)
         m[:,int(np.ceil(12/res)):,:]=0.25*torch.arange(np.ceil(12/res),x.shape[1], dtype=torch.double).unsqueeze(-1)*res
 
-        return x/torch.pow(10, m/10)
+        return x/torch.pow(10, torch.clamp(m/10, max=10*np.log10(1.79769e308)))
 
     def pat_adap_LP(self, x):
         fc = wf.f_c()
@@ -1117,7 +1117,7 @@ class PEAQ(torch.nn.Module):
 
         af = torch.zeros(a.shape[0],Et.shape[-1], dtype=torch.double)
         af[:,0]=1
-        bf = torch.pow(a.repeat(Et.shape[-1],1).transpose(0,1), torch.arange(Et.shape[-1]))
+        bf = torch.pow(torch.clamp(a.repeat(Et.shape[-1],1).transpose(0,1), max=(1.79769e308)**(1/(Et.shape[-1]-1))), torch.arange(Et.shape[-1]))
         num = torchaudio.functional.lfilter(Et*Er, af, bf, clamp=False)
         den = torchaudio.functional.lfilter(Er*Er, af, bf, clamp=False)
         R = num/den
@@ -1180,11 +1180,11 @@ class PEAQ(torch.nn.Module):
     
     def calc_loud(self, E):
         f =  wf.f_c()
-        Eth = torch.pow(10, 0.364*torch.pow(f/1000, -0.8))
+        Eth = torch.pow(10, torch.clamp(0.364*torch.pow(f/1000, -0.8), max=np.log10(1.79769e308)))
         s = torch.pow(10, (-2-2.05*torch.arctan(f/4000)-0.75*torch.arctan(torch.square(f/1600)))/10)
-        N = 1.07664*torch.pow(Eth/(s*(10**4)), 0.23)*(torch.pow(1-s+(s*torch.transpose(E, 1,2))/Eth, 0.23)-1)
+        N = 1.07664*torch.pow(Eth/(s*(1e4)), 0.23)*(torch.pow(1-s+(s*torch.transpose(E, 1,2))/Eth, 0.23)-1)
         return (25/N.shape[1])*torch.sum(torch.clamp(N, min=0), dim=2), Eth
-    
+
     def calc_MOV(self, mp, r_modEl, Eth, t_Ep, r_Ep, sp_log, Pnoise, Mask, ep):
         # Need to calculate:
         #   WinModDiff1_B
@@ -1200,6 +1200,9 @@ class PEAQ(torch.nn.Module):
         #   EHS_B
         ret1 = 5*[0]
         ret2 = 5*[0]
+        ret1 = 5*[torch.zeros(2)]
+        ret2 = 5*[torch.zeros(2)]
+
         # mp = (t_mp, r_mp)
         MD1B = self.ModDiff(mp, 1, 1)
         TempWt = torch.sum(r_modEl.transpose(1,2)/(r_modEl.transpose(1,2)+100*torch.pow(Eth,0.3)), dim=2)
@@ -1209,7 +1212,6 @@ class PEAQ(torch.nn.Module):
             # AvgModDiff1_B
         ret2[1] = self.AvgX(self.ModDiff(mp, 0.1, 0.01), W=TempWt)
             # AvgModDiff2_B
-
         st, sr = torch.vsplit(0.15*mp.transpose(1,2)+0.5, [self.bsize])
         #beta = torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep)
         #NL = ((Eth/st)**0.23)*(((1+torch.clamp(st*t_Ep-sr*r_Ep,min=0)/(Eth+sr*r_Ep*beta))**0.23)-1)
@@ -1244,7 +1246,9 @@ class PEAQ(torch.nn.Module):
         else:
             w=1
         md = w*torch.abs(xt-xr)/(offset+xr)
-        return 100*torch.sum(md, dim=1)/xt.shape[1]
+        #return 100*torch.sum(md, dim=1)/xt.shape[1]
+        retval = 100*torch.sum(md, dim=1)/xt.shape[1]
+        return retval
 
     def BWidth(self, FL):
         FLTst, FLRef = torch.vsplit(FL, [self.bsize])
@@ -1269,11 +1273,11 @@ class PEAQ(torch.nn.Module):
     def mfpd_adb(self, E):
         tE, rE = torch.vsplit(E, [self.bsize])
         Lkn = 0.3*torch.maximum(rE,tE)+0.7*tE
-        s = torch.le(Lkn,0)*1e30+torch.gt(Lkn, 0)*(5.95072*torch.pow(6.39468/(Lkn+(Lkn<=0)), 1.71332)+(9.01033e-11)*torch.pow(Lkn, 4)+(5.05622e-6)*torch.pow(Lkn, 3)-0.00102438*torch.square(Lkn)+0.0550197*Lkn-0.198719)
+        s = torch.le(Lkn,0)*1e30+torch.gt(Lkn, 0)*(5.95072*torch.pow(torch.clamp(6.39468/(Lkn+(Lkn<=0)), max=(1.79769e308)**(1/1.71332)), 1.71332)+(9.01033e-11)*torch.pow(torch.clamp(Lkn, max=(1.79769e308)**(1/4)), 4)+(5.05622e-6)*torch.pow(torch.clamp(Lkn, max=(1.79769e308)**1/3), 3)-0.00102438*torch.square(torch.clamp(Lkn, max=np.sqrt(1.79769e308)))+0.0550197*Lkn-0.198719)
         e = rE-tE
         b = (4*torch.gt(rE, tE)+6*torch.le(rE,tE)).to(dtype=torch.double)
-        a = torch.pow(10, -0.5213902276543247/b)/s
-        pc = 1-torch.pow(10, -a*torch.pow(e, b))
+        a = torch.pow(10, torch.clamp(-0.5213902276543247/b, max=np.log10(1.79769e308)))/s
+        pc = 1-torch.pow(10, torch.clamp(-a*torch.pow(torch.clamp(e, max=torch.pow(1.79769e308,-b)), b), max=np.log10(1.79769e308)))
         qc = torch.abs(torch.trunc(e))/s
             # INT() is assumed to mean rounding towards zero
             # it has been noted in literature, that floor may be more appropriate
@@ -1369,44 +1373,13 @@ class PEAQ(torch.nn.Module):
         else:
             N = torch.sum(torch.square(W))
             x = x*W
-        return np.sqrt(Z)*torch.sqrt(torch.sum(torch.square(x), dim=1)/N)
+        return np.sqrt(Z)*torch.sqrt(torch.clamp(torch.sum(torch.square(x), dim=1)/N, min=1e-30))
 
     def WinX(self, x):
         print('##################\nWinX only works for BxN shape tensors!\n##################')
-        return torch.sqrt(torch.sum(torch.pow(torch.mean(x.unfold(dimension=1, size=4, step=1), dim=-1), 4), dim=-1)/(x.shape[-1]-3))
-    
-    '''
-    def ehs_peak(self, x):
-        print('WIP, not working yet!')
-        # getting short signals out of the way
-        if x.shape[1]<4:
-            return torch.max(x,dim=1)
-        if x.shape[1]<16:
-            return torch.max(x[:,1:],dim=1)
-        # low pass filter on longer signals
-        if x.shape[1]>32:
-            N=8
-            if x.shape[1]>128:
-                N=16
-            xf = torchaudio.functional.filtfilt(x,torch.cat((torch.ones(1), torch.zeros(N-1))),torch.ones(N)/N,clamp=False)
-            sxd = torch.sign(torch.cat((torch.zeros(x.shape[0], 1), xf[:,1:]-xf[:,:-1]),dim=-1))
-        else:
-            sxd  = torch.sign(torch.cat((torch.zeros(x.shape[0], 1), x[:,1:]-x[:,:-1]),dim=-1))
-        # diff of sign of diff
-        sx2d = torch.cat((sxd[:,:-1]-sxd[:,1:], torch.zeros(x.shape[0], 1)),dim=-1)
+        x_mean = torch.clamp(torch.mean(x.unfold(dimension=1, size=4, step=1), dim=-1), max=(1.79769e308)**0.25)
+        return torch.sqrt(torch.clamp(torch.sum(torch.pow(x_mean, 4), dim=-1)/(x.shape[-1]-3), min=1e-12))
 
-        # first valley index
-        minidx = torch.argmax((sx2d==-2).to(dtype=torch.int),dim=-1)
-        # first peak after minidx
-        pkval = torch.empty(x.shape[0])
-        for b in range(x.shape[0]):
-            pkidx = minidx[b]+torch.argmax((sx2d[b,minidx[b]:]==2).to(dtype=torch.int),dim=-1)
-            pkval[b] = x[b,pkidx]
-        
-        # pkval now contains the value at first peak after first valley for each batch
-        return pkval
-        ####################################################################
-    '''
 
 class PEMOQ(torch.nn.Module):
     def __init__(self):
@@ -1550,8 +1523,10 @@ if __name__=="__main__":
     dsig = torch.sgn(sig)*torch.sqrt(torch.abs(sig))
     dsig = torch.cat((dsig,sig))
     dsig.requires_grad_(requires_grad=True)
+    dsig.retain_grad()
     sig = sig.repeat(2,1)
     ls = peaq(sig, dsig)
     print(ls)
     bkw = ls.backward()
     print(bkw)
+    print(dsig.grad)
