@@ -132,7 +132,7 @@ class PEAQ(torch.nn.Module):
         self.step = int(np.ceil(self.nfft/2))
         self.get_normfac()
         self.barkmat, self.imin, self.imax = wf.lin2bark_mat(self.fs, self.nfft)
-        
+
     def get_normfac(self):
         # calculate from 10 frames of 0 dB full scale 1019.5 Hz sine wave
         f = 1019.5
@@ -469,8 +469,8 @@ class PEAQ(torch.nn.Module):
         BWTst = 921-torch.argmax(torch.flip(gest*tstmask, dims=[-1]), dim=2).float()
 
         gts = torch.gt(BWRef, 346)
-        BWR_B = torch.sum(BWRef*gts, dim=1)/torch.sum(gts, dim=-1)
-        BWT_B = torch.sum(BWTst*gts, dim=1)/torch.sum(gts, dim=-1)
+        BWR_B = torch.sum(BWRef*gts, dim=1)/torch.clamp(torch.sum(gts, dim=-1), min=1)
+        BWT_B = torch.sum(BWTst*gts, dim=1)/torch.clamp(torch.sum(gts, dim=-1), min=1)
         return BWR_B, BWT_B
     
     def RDF(self, x):
@@ -725,12 +725,14 @@ if __name__=="__main__":
     #sig = torch.randn((2,10000), dtype=torch.double)
     sig, fs = torchaudio.load('sample.wav')
     dsig = torch.sgn(sig)*torch.sqrt(torch.abs(sig))
+    #dsig = torchaudio.functional.filtfilt(sig, torch.tensor([1, 0]),torch.tensor([1, -0.85]), clamp=False)
     dsig = torch.cat((dsig,sig))
     dsig.requires_grad_(requires_grad=True)
     dsig.retain_grad()
     sig = sig.repeat(2,1)
-    ls = peaq(sig, dsig)
+    ls = peaq(dsig, sig)
     print(ls)
     bkw = ls.backward()
     print(bkw)
     print(dsig.grad)
+    print(torch.sqrt(torch.mean(torch.square(dsig.grad),dim=1)))
