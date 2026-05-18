@@ -394,12 +394,21 @@ class PEAQ(torch.nn.Module):
         Mod = Eder/(1+(El/0.3))
         return Mod, El
     
-    def calc_loud(self, E):
+    def LoudThreshold(self, E):
+        idxmin = self.bsize*[torch.tensor(0)]
         f =  wf.f_c()
         Eth = torch.pow(10, torch.clamp(0.364*torch.pow(f/1000, -0.8), max=np.log10(1.79769e308)))
         s = torch.pow(10, (-2-2.05*torch.arctan(f/4000)-0.75*torch.arctan(torch.square(f/1600)))/10)
         N = 1.07664*torch.pow(Eth/(s*(1e4)), 0.23)*(torch.pow(1-s+(s*torch.transpose(E, 1,2))/Eth, 0.23)-1)
-        return (25/N.shape[1])*torch.sum(torch.clamp(N, min=0), dim=2), Eth
+        Ntotal = (24/N.shape[1])*torch.sum(torch.clamp(N, min=0), dim=2)
+        idxhi = torch.gt(Ntotal, 0.1)
+        idxmin_pb = torch.argmax(idxhi.to(torch.int), dim=1)
+        idxmin1 = torch.maximum(idxmin_pb[:self.bsize], idxmin_pb[self.bsize:])
+        for i in range(self.bsize):
+            if torch.sum(idxhi[i,:])==0 or torch.sum(idxhi[i,:])==0:
+                idxmin[i]=torch.tensor(-1)
+        idxmin2 = torch.stack(idxmin)
+        return idxmin1*torch.ge(idxmin2,0)+idxmin2
 
     def calc_MOV(self, mp, r_modEl, Eth, t_Ep, r_Ep, sp_log, Pnoise, Mask, ep):
         # Need to calculate:
@@ -430,7 +439,8 @@ class PEAQ(torch.nn.Module):
         #beta = torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep)
         #NL = ((Eth/st)**0.23)*(((1+torch.clamp(st*t_Ep-sr*r_Ep,min=0)/(Eth+sr*r_Ep*beta))**0.23)-1)
         NL = torch.pow(Eth/st,0.23)*(torch.pow(1+torch.clamp(st*t_Ep.transpose(1,2)-sr*r_Ep.transpose(1,2),min=0)/(Eth+sr*r_Ep.transpose(1,2)*torch.exp(-1.5*(t_Ep-r_Ep)/r_Ep).transpose(1,2)),0.23)-1)
-        ret2[2] = torch.mean(self.RmsX(NL), dim=-1)   # RmsNoiseLoud_B
+        minidxNL = self.LoudThreshold(ep)
+        ret2[2] = self.RmsNoiseLoud(NL, minidxNL)   # RmsNoiseLoud_B
         # not sure if temporal and spectral averaging is in correct order
 
         ret1[:2] = self.BWidth(sp_log)
@@ -481,7 +491,7 @@ class PEAQ(torch.nn.Module):
     def mfpd_adb(self, E):
         tE, rE = torch.vsplit(E, [self.bsize])
         Lkn = 0.3*torch.maximum(rE,tE)+0.7*tE
-        s = torch.le(Lkn,0)*1e30+torch.gt(Lkn, 0)*(5.95072*torch.pow(torch.clamp(6.39468/(Lkn+(Lkn<=0)), max=(1.79769e308)**(1/1.71332)), 1.71332)+(9.01033e-11)*torch.pow(torch.clamp(Lkn, max=(1.79769e308)**(1/4)), 4)+(5.05622e-6)*torch.pow(torch.clamp(Lkn, max=(1.79769e308)**1/3), 3)-0.00102438*torch.square(torch.clamp(Lkn, max=np.sqrt(1.79769e308)))+0.0550197*Lkn-0.198719)
+        s = torch.le(Lkn,0)*1e30+torch.gt(Lkn, 0)*(5.95072*torch.pow(torch.clamp(6.39468/(Lkn+((Lkn<=0)*torch.max(2*torch.abs(Lkn)))), max=(1.79769e308)**(1/1.71332)), 1.71332)+(9.01033e-11)*torch.pow(torch.clamp(Lkn, max=(1.79769e308)**(1/4)), 4)+(5.05622e-6)*torch.pow(torch.clamp(Lkn, max=(1.79769e308)**1/3), 3)-0.00102438*torch.square(torch.clamp(Lkn, max=np.sqrt(1.79769e308)))+0.0550197*Lkn-0.198719)
         e = rE-tE
         b = (4*torch.gt(rE, tE)+6*torch.le(rE,tE)).to(dtype=torch.double)
         a = torch.pow(10, torch.clamp(-0.5213902276543247/b, max=np.log10(1.79769e308)))/s
@@ -563,6 +573,15 @@ class PEAQ(torch.nn.Module):
         # maybe should be turned into torch.nanmean() later if energy thresholding is added
         return 1000*torch.mean(ehs, dim=-1)
 
+    def RmsNoiseLoud(self, N, idx):
+        RNL = []
+        for i in range(self.bsize):
+            if idx[i]<0:
+                RNL.append(torch.tensor(0))
+            else:
+                RNL.append(torch.mean(self.RmsX(N[i,min(idx[i]+2, N.shape[1]-1):,:]), dim=-1))
+        return torch.stack(RNL)
+
     def AvgX(self, x, W=None):
         if W==None:
             N = x.shape[1]
@@ -577,7 +596,7 @@ class PEAQ(torch.nn.Module):
         else:
             N = torch.sum(torch.square(W))
             x = x*W
-        return np.sqrt(Z)*torch.sqrt(torch.clamp(torch.sum(torch.square(x), dim=1)/N, min=1e-30))
+        return np.sqrt(Z)*torch.sqrt(torch.clamp(torch.sum(torch.square(x), dim=0)/N, min=1e-30))
 
     def WinX(self, x):
         print('##################\nWinX only works for BxN shape tensors!\n##################')
@@ -724,6 +743,7 @@ if __name__=="__main__":
     peaq = PEAQ()
     #sig = torch.randn((2,10000), dtype=torch.double)
     sig, fs = torchaudio.load('sample.wav')
+    sig = sig/torch.max(torch.abs(sig))
     dsig = torch.sgn(sig)*torch.sqrt(torch.abs(sig))
     #dsig = torchaudio.functional.filtfilt(sig, torch.tensor([1, 0]),torch.tensor([1, -0.85]), clamp=False)
     dsig = torch.cat((dsig,sig))
