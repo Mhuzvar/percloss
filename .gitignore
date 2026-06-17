@@ -161,5 +161,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Files that came with OPERA SW
+# Files that came with OPERA SW and files obtained using them
 PEAQtestCD/
+PEAQmono/
