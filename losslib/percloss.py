@@ -121,12 +121,13 @@ class cd_mfcc(torch.nn.Module):
         return torch.mean(distmat, dim=(1,2))
 
 class PEAQ(torch.nn.Module):
-    def __init__(self, fs=44100):
+    def __init__(self, fs=44100, data_boundary=True):
         super().__init__()
         if fs<2040:
             raise Exception(f"Cannot calculate normalization factor for fs = {fs} Hz!")
         elif fs<36000:
             print("\x1b[0;37;43mWarning:\x1b[0m fs lower than 36 kHz may introduce problems during calculation!")
+        self.databound = data_boundary
         self.fs = fs
         self.nfft = int(np.floor(2048*(self.fs/48000)))
         self.step = int(np.ceil(self.nfft/2))
@@ -192,12 +193,15 @@ class PEAQ(torch.nn.Module):
         if len(x.shape) == 1:
             x = x.unsqueeze(0)
             y = y.unsqueeze(0)
-        x_cat = torch.cat((x,y), dim=0)
+        x_cat = 32768*torch.cat((x,y), dim=0)
             # makes both x and y be considered inputs in a batch
             
         # cut up into 2048* sample windows and apply Hann window
         # *wlen adjusted to fs to keep frequency resolution as similar to norm as possible
         xw_nw = torch.nn.functional.pad(x_cat, (0, int(np.ceil((x_cat.shape[1]-self.nfft)/self.step))*self.step+self.nfft-x_cat.shape[1])).unfold(dimension=1, size=self.nfft, step=self.step)
+        if self.databound:
+            xw_nw = self.data_boundary(x_cat, xw_nw)
+        x_E = torch.sum(xw_nw[:,:,self.step:]*xw_nw[:,:,self.step:], dim=-1)    # signal energy by frames
         xw_nw = xw_nw * torch.hann_window(self.nfft, periodic=False)
 
         # fft
@@ -211,7 +215,8 @@ class PEAQ(torch.nn.Module):
 
         #scaling of the input signals
         #xw_nw = self.fac*xw_nw[:,:,:942]    # second half removal redundant when using rfft
-        xw_nw=self.fac*xw_nw
+        #xw_nw=self.fac*xw_nw
+        print('!!!SCALING METHOD REPLACED ACCORDING TO MATLAB IMPLEMENTATION!!!')
         
         # outer and middle ear weighting function
         #f = np.linspace(0,self.fs//2,xw_nw.shape[-1],endpoint=False)
@@ -226,7 +231,7 @@ class PEAQ(torch.nn.Module):
         noisep = torch.abs(xw_nw[self.bsize:,:,self.imin:self.imax])-torch.abs(xw_nw[:self.bsize,:,self.imin:self.imax])
         xw = torch.cat((xw_nc[:,:,self.imin:self.imax], noisep), dim=0)
         #F0 = 10*torch.log10(torch.abs(xw_nw[self.bsize:,:,imin:imax])/torch.abs(xw_nw[:self.bsize,:,imin:imax]))
-        EHS_B = self.ehs(20*torch.log10(torch.abs(xw_nw[self.bsize:,:,:])/torch.abs(xw_nw[:self.bsize,:,:])))
+        EHS_B = self.ehs(20*torch.log10(torch.abs(xw_nw[self.bsize:,:,:])/torch.abs(xw_nw[:self.bsize,:,:])), x_E)
 
         # critical band grouping
         xw = self.crit_group(torch.abs(torch.square(xw)))
@@ -253,6 +258,17 @@ class PEAQ(torch.nn.Module):
 
         
         return ep, mp, mod_eline, xw_nw, noisep, EHS_B, W
+
+    def data_boundary(self, x, xf):
+        if self.bsize>1:
+            print("\x1b[0;37;43mWarning:\x1b[0m Batch size is more than 1, noise frame rejection may not yield intended results!")
+        yf = torchaudio.functional.lfilter(torch.abs(x[self.bsize:,:]), torch.tensor([1,0,0,0,0]), torch.tensor([1,1,1,1,1]), clamp=False)
+        yf = torch.nn.functional.pad(yf, (0, int(np.ceil((yf.shape[1]-self.nfft)/self.step))*self.step+self.nfft-yf.shape[1])).unfold(dimension=1, size=self.nfft, step=self.step)
+        maxval = torch.amax(yf, dim=(0, 2))
+        okframes = torch.gt(maxval,200).to(torch.int8)
+        firstok = torch.argmax(okframes)
+        lastok = torch.argmax(torch.flipud(okframes))
+        return xf[:,firstok:xf.shape[1]-lastok,:]
 
     def crit_group(self, x):
         return torch.clamp(torch.matmul(x,self.barkmat), min=0.000000000001)
@@ -522,7 +538,10 @@ class PEAQ(torch.nn.Module):
         
         return MFPD, ADB
             
-    def ehs(self, x):
+    def ehs(self, x, xE):
+        xElt = torch.lt(xE, 8000)
+        fkeep = 1-(xElt[:self.bsize,:]*xElt[self.bsize,:]).to(dtype=torch.int)
+
         maxlag = int(2**np.floor(np.log2((18000/self.fs)*(np.ceil(1024*(self.fs/48000))))))
             # should always be 256
 
@@ -570,8 +589,8 @@ class PEAQ(torch.nn.Module):
                     ehs[b,t] = x[b,t,pkidx]
         # as quoted from the norm:
         # "The average value of this maximum over frames multiplied by 1 000.0 is the error harmonic structure (EHS) variable."
-        # maybe should be turned into torch.nanmean() later if energy thresholding is added
-        return 1000*torch.mean(ehs, dim=-1)
+        #return 1000*torch.mean(ehs, dim=-1)
+        return 1000*torch.sum(ehs*fkeep, dim=-1)/torch.sum(fkeep, dim=-1)
 
     def RmsNoiseLoud(self, N, idx):
         RNL = []
@@ -740,7 +759,7 @@ class ViSQOLoss(torch.nn.Module):
 
 if __name__=="__main__":
     torch.autograd.set_detect_anomaly(True)
-    peaq = PEAQ()
+    peaq = PEAQ(fs=48000)
     #sig = torch.randn((2,10000), dtype=torch.double)
     sig, fs = torchaudio.load('sample.wav')
     sig = sig/torch.max(torch.abs(sig))
@@ -750,6 +769,11 @@ if __name__=="__main__":
     dsig.requires_grad_(requires_grad=True)
     dsig.retain_grad()
     sig = sig.repeat(2,1)
+
+    sig, fs = torchaudio.load('/home/matej/Documents/000_gh/percloss/PEAQmono/srefclv.wav')
+    dsig, dfs = torchaudio.load('/home/matej/Documents/000_gh/percloss/PEAQmono/scodclv.wav')
+    dsig.requires_grad_(requires_grad=True)
+    dsig.retain_grad()
     ls = peaq(dsig, sig)
     print(ls)
     bkw = ls.backward()
