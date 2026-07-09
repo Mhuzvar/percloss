@@ -541,7 +541,7 @@ class PEAQ(torch.nn.Module):
     def ehs(self, x, xE):
         xElt = torch.lt(xE, 8000)
         fkeep = 1-(xElt[:self.bsize,:]*xElt[self.bsize,:]).to(dtype=torch.int)
-
+        
         maxlag = int(2**np.floor(np.log2((18000/self.fs)*(np.ceil(1024*(self.fs/48000))))))
             # should always be 256
 
@@ -557,7 +557,8 @@ class PEAQ(torch.nn.Module):
             # windowed by normalized Hann window
         C = C-torch.mean(C,dim=-1,keepdim=True)
             # removing DC component
-        C_ft = 20*torch.log10(torch.abs(torch.fft.rfft(C, dim=-1, norm='forward')))
+        #C_ft = 20*torch.log10(torch.abs(torch.fft.rfft(C, dim=-1, norm='forward')))
+        C_ft = torch.square(torch.abs(torch.fft.rfft(C, dim=-1, norm='forward')))
             # power spectrum using FFT
         
         # peak detection
@@ -590,7 +591,7 @@ class PEAQ(torch.nn.Module):
         # as quoted from the norm:
         # "The average value of this maximum over frames multiplied by 1 000.0 is the error harmonic structure (EHS) variable."
         #return 1000*torch.mean(ehs, dim=-1)
-        return 1000*torch.sum(ehs*fkeep, dim=-1)/torch.sum(fkeep, dim=-1)
+        return 1000*torch.sum(ehs*fkeep + 0.001*(fkeep-1), dim=-1)/torch.sum(fkeep, dim=-1)
 
     def RmsNoiseLoud(self, N, idx):
         RNL = []
