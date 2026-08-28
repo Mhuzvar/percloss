@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from torch.utils.checkpoint import checkpoint
+#from torch.utils.checkpoint import checkpoint
 import torchaudio
 try:
     import losslib.wfilters as wf
@@ -64,14 +64,13 @@ def gammatone_filterbank_matrix(fs, nfft, n_chan, f_min=50.0, f_max=None, order=
     return resp.astype(np.float32)
 
 class ViSQOLoss(torch.nn.Module):
-    def __init__(self, fs='48000', mode='svr'):
+    def __init__(self, fs=48000, mode=0):
         super().__init__()
         self.fs = fs
         self.nfft = int(round(0.080 * fs))
         self.nstep = int(round(0.020 * fs))
         self.gtonechan = 32
 
-        self.dyn_range = 80.0    # dB span backing C1/C3 — verify against the reference
         self.nsim_wlen, self.nsim_sigma = 3, 0.5
         d = torch.arange(self.nsim_wlen) - self.nsim_wlen // 2
         g = torch.exp(-d.to(torch.float32) ** 2 / (2 * self.nsim_sigma ** 2))
@@ -81,9 +80,11 @@ class ViSQOLoss(torch.nn.Module):
 
         match mode:
             case 0:
-                self.NSIM2MOS = SVR_MOS()
+                self.NSIM2Q = NSIM_mean()
             case 1:
-                self.NSIM2MOS = poly_MOS()
+                self.NSIM2Q = SVR_MOS()
+            case 2:
+                self.NSIM2Q = poly_MOS()
             case _:
                 raise Exception("Error: Unknown NSIM to MOS mode specified")
 
@@ -111,6 +112,7 @@ class ViSQOLoss(torch.nn.Module):
         pred = self.pwr_align(predictions, targets)
         # 2. gammatone spectrogram
         Ggram_p, Ggram_t = self.gtone(pred, targets)
+        L = Ggram_t.amax(dim=(-2, -1))
             # change to the following if low on memory during calculation
             # Ggram_p, Ggram_t = checkpoint(self.gtone, pred, targets, use_reentrant=False)
         # 3. patch creation
@@ -118,9 +120,9 @@ class ViSQOLoss(torch.nn.Module):
         Patch_t = self.patchify(Ggram_t)
         # 4. patch and subpatch alignment omitted
         # 5. NSIM mean over 
-        NSIM = self.calc_NSIM()
+        NSIM = self.calc_NSIM(Patch_p, Patch_t, L)
         # 6. NSIM2MOS
-        MOS = self.NSIM2MOS(NSIM)
+        MOS = self.NSIM2Q(NSIM)
 
         return MOS.mean()   # because everything until now was batched
 
@@ -149,8 +151,8 @@ class ViSQOLoss(torch.nn.Module):
             raise ValueError(f"need at least {Plen} frames, got {G.shape[-1]}")
         return G.unfold(-1, Plen, Phop).movedim(-2, -3) # movedim to make it (..., chan, Plen)
 
-    def calc_NSIM(self, p, t):
-        """(B, T_in_patches, chan, Plen) x2 -> (B, T_in_patches, chan', Plen'), mean NSIM per patch."""
+    def calc_NSIM(self, p, t, L):
+        """(B, T_in_patches, chan, Plen) x2 -> (B, T_in_patches, chan', Plen')"""
         B, P = t.shape[:2]
         x = p.reshape(B * P, 1, *p.shape[-2:])
         y = t.reshape(B * P, 1, *t.shape[-2:])
@@ -166,8 +168,9 @@ class ViSQOLoss(torch.nn.Module):
         var_y = torch.clamp(loc(y * y) - mu_y2, min=0.0)
         cov = loc(x * y) - mu_xy
 
-        C1 = (0.01 * self.dyn_range) ** 2
-        C3 = (0.03 * self.dyn_range) ** 2 / 2.0
+        Lb = L.repeat_interleave(P).reshape(-1, 1, 1, 1)
+        C1 = (0.01 * Lb) ** 2
+        C3 = (0.03 * Lb) ** 2
 
         lum = (2 * mu_xy + C1) / (mu_x2 + mu_y2 + C1)
         stru = (cov + C3) / (torch.sqrt(var_x * var_y + 1e-12) + C3)
@@ -176,8 +179,8 @@ class ViSQOLoss(torch.nn.Module):
         return nsim.reshape(B, P, *nsim.shape[-2:])
 
 class ViSQOLoss_f(ViSQOLoss):
-    def __init__(self, fs):
-        super().__init__(fs)
+    def __init__(self, fs=48000, mode=0):
+        super().__init__(fs, mode)
         gt_mat = gammatone_filterbank_matrix(self.fs, self.nfft, self.gtonechan, f_min=50)
         self.register_buffer("gt_mat", torch.from_numpy(gt_mat), persistent=False)
         self.register_buffer("window", torch.hann_window(self.nfft), persistent=False)
@@ -193,8 +196,8 @@ class ViSQOLoss_f(ViSQOLoss):
         return Ggram_log
 
 class ViSQOLoss_t(ViSQOLoss):
-    def __init__(self, fs):
-        super().__init__(fs)
+    def __init__(self, fs=48000, mode=0):
+        super().__init__(fs, mode)
         b, a = erb_gammatone_coeffs(fs, self.gtonechan, f_min=50)
         self.register_buffer("b_coeffs", torch.from_numpy(b), persistent=False)
         self.register_buffer("a_coeffs", torch.from_numpy(a), persistent=False)
@@ -211,10 +214,23 @@ class ViSQOLoss_t(ViSQOLoss):
         Ggram = y2.unfold(-1, self.nfft, self.nstep).mean(dim=-1)   # (B, chan, T_in_frames)
         return 10*torch.log10(torch.clamp(Ggram, min=1e-12))
 
-class SVR_MOS():
+class NSIM_mean(torch.nn.Module):
     def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return -torch.mean(x)
+
+class SVR_MOS(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
         pass
 
-class poly_MOS():
+class poly_MOS(torch.nn.Module):
     def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
         pass
