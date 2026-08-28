@@ -64,12 +64,28 @@ def gammatone_filterbank_matrix(fs, nfft, n_chan, f_min=50.0, f_max=None, order=
     return resp.astype(np.float32)
 
 class ViSQOLoss(torch.nn.Module):
-    def __init__(self, fs):
+    def __init__(self, fs='48000', mode='svr'):
         super().__init__()
         self.fs = fs
         self.nfft = int(round(0.080 * fs))
         self.nstep = int(round(0.020 * fs))
         self.gtonechan = 32
+
+        self.dyn_range = 80.0    # dB span backing C1/C3 — verify against the reference
+        self.nsim_wlen, self.nsim_sigma = 3, 0.5
+        d = torch.arange(self.nsim_wlen) - self.nsim_wlen // 2
+        g = torch.exp(-d.to(torch.float32) ** 2 / (2 * self.nsim_sigma ** 2))
+        g = g / g.sum()
+        w = torch.outer(g, g).reshape(1, 1, self.nsim_wlen, self.nsim_wlen)
+        self.register_buffer("nsim_win", w, persistent=False)
+
+        match mode:
+            case 0:
+                self.NSIM2MOS = SVR_MOS()
+            case 1:
+                self.NSIM2MOS = poly_MOS()
+            case _:
+                raise Exception("Error: Unknown NSIM to MOS mode specified")
 
     def forward(self, predictions, targets):
         """
@@ -100,14 +116,13 @@ class ViSQOLoss(torch.nn.Module):
         # 3. patch creation
         Patch_p = self.patchify(Ggram_p)
         Patch_t = self.patchify(Ggram_t)
-        # 4. patch and subpatch alignment (needs to be simplified, maybe even omitted)
-
-        # 5. NSIM
+        # 4. patch and subpatch alignment omitted
+        # 5. NSIM mean over 
         NSIM = self.calc_NSIM()
-        # 6. mean of mean per frequency?
-        Q = NSIM.mean()
+        # 6. NSIM2MOS
+        MOS = self.NSIM2MOS(NSIM)
 
-        return Q
+        return MOS.mean()   # because everything until now was batched
 
     def pwr_align(self, p, t):
         Pp = torch.mean(torch.square(torch.abs(p)), dim=-1, keepdim=True)
@@ -134,8 +149,31 @@ class ViSQOLoss(torch.nn.Module):
             raise ValueError(f"need at least {Plen} frames, got {G.shape[-1]}")
         return G.unfold(-1, Plen, Phop).movedim(-2, -3) # movedim to make it (..., chan, Plen)
 
-    def calc_NSIM(self):
-        pass
+    def calc_NSIM(self, p, t):
+        """(B, T_in_patches, chan, Plen) x2 -> (B, T_in_patches, chan', Plen'), mean NSIM per patch."""
+        B, P = t.shape[:2]
+        x = p.reshape(B * P, 1, *p.shape[-2:])
+        y = t.reshape(B * P, 1, *t.shape[-2:])
+        w = self.nsim_win.to(x.dtype)
+
+        def loc(v):
+            return torch.nn.functional.conv2d(v, w)
+
+        mu_x, mu_y = loc(x), loc(y)
+        mu_x2, mu_y2, mu_xy = mu_x ** 2, mu_y ** 2, mu_x * mu_y
+
+        var_x = torch.clamp(loc(x * x) - mu_x2, min=0.0)
+        var_y = torch.clamp(loc(y * y) - mu_y2, min=0.0)
+        cov = loc(x * y) - mu_xy
+
+        C1 = (0.01 * self.dyn_range) ** 2
+        C3 = (0.03 * self.dyn_range) ** 2 / 2.0
+
+        lum = (2 * mu_xy + C1) / (mu_x2 + mu_y2 + C1)
+        stru = (cov + C3) / (torch.sqrt(var_x * var_y + 1e-12) + C3)
+
+        nsim = lum*stru
+        return nsim.reshape(B, P, *nsim.shape[-2:])
 
 class ViSQOLoss_f(ViSQOLoss):
     def __init__(self, fs):
@@ -172,3 +210,11 @@ class ViSQOLoss_t(ViSQOLoss):
         y2 = torch.nn.functional.pad(y ** 2, (pad, pad), mode="reflect")    # padding only to match frequency domain shape
         Ggram = y2.unfold(-1, self.nfft, self.nstep).mean(dim=-1)   # (B, chan, T_in_frames)
         return 10*torch.log10(torch.clamp(Ggram, min=1e-12))
+
+class SVR_MOS():
+    def __init__(self):
+        pass
+
+class poly_MOS():
+    def __init__(self):
+        pass
