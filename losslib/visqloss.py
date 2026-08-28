@@ -98,7 +98,8 @@ class ViSQOLoss(torch.nn.Module):
             # change to the following if low on memory during calculation
             # Ggram_p, Ggram_t = checkpoint(self.gtone, pred, targets, use_reentrant=False)
         # 3. patch creation
-        
+        Patch_p = self.patchify(Ggram_p)
+        Patch_t = self.patchify(Ggram_t)
         # 4. patch and subpatch alignment (needs to be simplified, maybe even omitted)
 
         # 5. NSIM
@@ -125,6 +126,13 @@ class ViSQOLoss(torch.nn.Module):
 
     def _gtone(self, x):
         raise NotImplementedError
+
+    def patchify(self, G, Plen=30, Phop=None):
+        """(B, chan, T_in_frames) -> (B, T_in_patches, chan, Plen)"""
+        Phop = Plen if Phop is None else Phop
+        if G.shape[-1] < Plen:
+            raise ValueError(f"need at least {Plen} frames, got {G.shape[-1]}")
+        return G.unfold(-1, Plen, Phop).movedim(-2, -3) # movedim to make it (..., chan, Plen)
 
     def calc_NSIM(self):
         pass
@@ -160,7 +168,7 @@ class ViSQOLoss_t(ViSQOLoss):
                 y, self.a_coeffs.to(y.dtype), self.b_coeffs[k].to(y.dtype),
                 clamp=False, batching=True,
             )
-        pad = self.nfft // 2
+        pad = self.nfft//2
         y2 = torch.nn.functional.pad(y ** 2, (pad, pad), mode="reflect")    # padding only to match frequency domain shape
         Ggram = y2.unfold(-1, self.nfft, self.nstep).mean(dim=-1)   # (B, chan, T_in_frames)
-        return 10 * torch.log10(torch.clamp(Ggram, min=1e-12))
+        return 10*torch.log10(torch.clamp(Ggram, min=1e-12))
