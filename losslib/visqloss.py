@@ -19,6 +19,36 @@ def erb_space(f_min, f_max, n_filters):
                                         np.log(f_min + ear_q * min_bw)) / n_filters
     ) * (f_max + ear_q * min_bw)
 
+def erb_gammatone_coeffs(fs, n_chan, f_min=50.0, f_max=None):
+    """Slaney ERB gammatone as a cascade of 4 biquads per channel.
+    Returns b: (4, n_chan, 3), a: (n_chan, 3)."""
+    f_max = f_max or fs / 2
+    T = 1.0 / fs
+    cf = erb_space(f_min, f_max, n_chan)
+    B = 1.019 * 2 * np.pi * erb(cf)
+
+    cos_, sin_, e = np.cos(2 * cf * np.pi * T), np.sin(2 * cf * np.pi * T), np.exp(B * T)
+    sq_p, sq_m = np.sqrt(3 + 2 ** 1.5), np.sqrt(3 - 2 ** 1.5)
+
+    A0 = T * np.ones_like(cf)
+    A1 = np.stack([                                     # (4, n_chan)
+        -(2 * T * cos_ / e + 2 * sq_p * T * sin_ / e) / 2,
+        -(2 * T * cos_ / e - 2 * sq_p * T * sin_ / e) / 2,
+        -(2 * T * cos_ / e + 2 * sq_m * T * sin_ / e) / 2,
+        -(2 * T * cos_ / e - 2 * sq_m * T * sin_ / e) / 2,
+    ])
+
+    a = np.stack([np.ones_like(cf), -2 * cos_ / e, np.exp(-2 * B * T)], axis=-1)
+    b = np.stack([np.broadcast_to(A0, A1.shape), A1, np.zeros_like(A1)], axis=-1)
+
+    # unit gain at each center frequency, evaluated on the unit circle
+    z = np.exp(2j * np.pi * cf / fs)
+    zi = np.stack([np.ones_like(z), z ** -1, z ** -2]).T          # (n_chan, 3)
+    H = np.prod((b * zi[None]).sum(-1), axis=0) / ((a * zi).sum(-1) ** 4)
+    b = b / np.abs(H)[None, :, None] ** 0.25                       # spread across sections
+
+    return b.astype(np.float32), a.astype(np.float32)
+
 def gammatone_filterbank_matrix(fs, nfft, n_chan, f_min=50.0, f_max=None, order=4):
     """Returns (n_filters, n_fft//2+1) numpy array of squared-magnitude gammatone
     responses evaluated at the STFT bin frequencies."""
@@ -40,11 +70,6 @@ class ViSQOLoss(torch.nn.Module):
         self.nfft = int(round(0.080 * fs))
         self.nstep = int(round(0.020 * fs))
         self.gtonechan = 32
-
-        gt_mat = gammatone_filterbank_matrix(self.fs, self.nfft, self.gtonechan, f_min=50)
-        self.register_buffer("gt_mat", torch.from_numpy(gt_mat), persistent=False)
-        self.register_buffer("window", torch.hann_window(self.nfft), persistent=False)
-
 
     def forward(self, predictions, targets):
         """
@@ -89,28 +114,53 @@ class ViSQOLoss(torch.nn.Module):
         return torch.sqrt(torch.clamp(Pt, min=1e-12))*p/torch.sqrt(torch.clamp(Pp, min=1e-12))
 
     def gtone(self, p, t):
-        p_spec = torch.stft(
-            p, n_fft=self.nfft, hop_length=self.nstep, win_length=self.nfft,
-            window=self.window.to(p.dtype), return_complex=True, center=True,
-        )                                        # (..., nfft//2+1, frames)
-        t_spec = torch.stft(
-            t, n_fft=self.nfft, hop_length=self.nstep, win_length=self.nfft,
-            window=self.window.to(t.dtype), return_complex=True, center=True,
-        )
-        P_pp = p_spec.real ** 2 + p_spec.imag ** 2
-        P_tt = t_spec.real ** 2 + t_spec.imag ** 2
+        Ggram_p = self._gtone(p)
+        Ggram_t = self._gtone(t)
 
-        Ggram_p = torch.einsum("cb,...bt->...ct", self.gt_mat.to(P_pp.dtype), P_pp)
-        Ggram_t = torch.einsum("cb,...bt->...ct", self.gt_mat.to(P_tt.dtype), P_tt)
-
-        Ggram_p_log = 10*torch.log10(torch.clamp(Ggram_p, min=1e-12))
-        Ggram_t_log = 10*torch.log10(torch.clamp(Ggram_t, min=1e-12))
-
-        floor = Ggram_t_log.amin(dim=(-2, -1), keepdim=True)
-        Ggram_p_log = torch.clamp(Ggram_p_log, min=floor) - floor
-        Ggram_t_log = Ggram_t_log - floor
+        floor = Ggram_t.amin(dim=(-2, -1), keepdim=True)
+        Ggram_p_log = torch.clamp(Ggram_p, min=floor) - floor
+        Ggram_t_log = Ggram_t - floor
 
         return Ggram_p_log, Ggram_t_log
 
-    def calc_NSIM():
+    def _gtone(self, x):
+        raise NotImplementedError
+
+    def calc_NSIM(self):
         pass
+
+class ViSQOLoss_f(ViSQOLoss):
+    def __init__(self, fs):
+        super().__init__(fs)
+        gt_mat = gammatone_filterbank_matrix(self.fs, self.nfft, self.gtonechan, f_min=50)
+        self.register_buffer("gt_mat", torch.from_numpy(gt_mat), persistent=False)
+        self.register_buffer("window", torch.hann_window(self.nfft), persistent=False)
+
+    def _gtone(self, x):
+        X = torch.stft(
+            x, n_fft=self.nfft, hop_length=self.nstep, win_length=self.nfft,
+            window=self.window.to(x.dtype), return_complex=True, center=True,
+        )
+        P_xx = X.real ** 2 + X.imag ** 2
+        Ggram = torch.einsum("cb,...bt->...ct", self.gt_mat.to(P_xx.dtype), P_xx)
+        Ggram_log = 10*torch.log10(torch.clamp(Ggram, min=1e-12))
+        return Ggram_log
+
+class ViSQOLoss_t(ViSQOLoss):
+    def __init__(self, fs):
+        super().__init__(fs)
+        b, a = erb_gammatone_coeffs(fs, self.gtonechan, f_min=50)
+        self.register_buffer("b_coeffs", torch.from_numpy(b), persistent=False)
+        self.register_buffer("a_coeffs", torch.from_numpy(a), persistent=False)
+
+    def _gtone(self, x):
+        y = x.unsqueeze(-2).expand(-1, self.gtonechan, -1)          # (B, chan, T)
+        for k in range(4):
+            y = torchaudio.functional.lfilter(
+                y, self.a_coeffs.to(y.dtype), self.b_coeffs[k].to(y.dtype),
+                clamp=False, batching=True,
+            )
+        pad = self.nfft // 2
+        y2 = torch.nn.functional.pad(y ** 2, (pad, pad), mode="reflect")    # padding only to match frequency domain shape
+        Ggram = y2.unfold(-1, self.nfft, self.nstep).mean(dim=-1)   # (B, chan, T_in_frames)
+        return 10 * torch.log10(torch.clamp(Ggram, min=1e-12))
