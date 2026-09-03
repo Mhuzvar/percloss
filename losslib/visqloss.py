@@ -14,10 +14,7 @@ def erb(f_hz):
 def erb_space(f_min, f_max, n_filters):
     # center frequencies uniformly spaced on the ERB scale
     ear_q, min_bw = 9.26449, 24.7
-    return -(ear_q * min_bw) + np.exp(
-        np.arange(1, n_filters + 1) * (-np.log(f_max + ear_q * min_bw) +
-                                        np.log(f_min + ear_q * min_bw)) / n_filters
-    ) * (f_max + ear_q * min_bw)
+    return -(ear_q * min_bw)+np.exp(np.arange(n_filters, 0, -1)*(-np.log(f_max+ear_q*min_bw)+np.log(f_min + ear_q * min_bw))/n_filters)*(f_max + ear_q * min_bw)
 
 def erb_gammatone_coeffs(fs, n_chan, f_min=50.0, f_max=None):
     """Slaney ERB gammatone as a cascade of 4 biquads per channel.
@@ -53,7 +50,7 @@ def gammatone_filterbank_matrix(fs, nfft, n_chan, f_min=50.0, f_max=None, order=
     """Returns (n_filters, n_fft//2+1) numpy array of squared-magnitude gammatone
     responses evaluated at the STFT bin frequencies."""
     f_max = f_max or fs / 2
-    cfs = erb_space(f_min, f_max, n_chan)            # center freqs, descending
+    cfs = erb_space(f_min, f_max, n_chan)               # center freqs
     b = 1.019 * erb(cfs)                                # Slaney bandwidth per filter
 
     freqs = np.fft.rfftfreq(nfft, d=1.0 / fs)          # (n_fft//2+1,)
@@ -119,7 +116,7 @@ class ViSQOLoss(torch.nn.Module):
         Patch_p = self.patchify(Ggram_p)
         Patch_t = self.patchify(Ggram_t)
         # 4. patch and subpatch alignment omitted
-        # 5. NSIM mean over 
+        # 5. NSIM
         NSIM = self.calc_NSIM(Patch_p, Patch_t, L)
         # 6. NSIM2MOS
         MOS = self.NSIM2Q(NSIM)
@@ -151,7 +148,7 @@ class ViSQOLoss(torch.nn.Module):
             raise ValueError(f"need at least {Plen} frames, got {G.shape[-1]}")
         return G.unfold(-1, Plen, Phop).movedim(-2, -3) # movedim to make it (..., chan, Plen)
 
-    def calc_NSIM(self, p, t, L):
+    def calc_NSIM(self, p, t, L=None):
         """(B, T_in_patches, chan, Plen) x2 -> (B, T_in_patches, chan', Plen')"""
         B, P = t.shape[:2]
         x = p.reshape(B * P, 1, *p.shape[-2:])
@@ -159,6 +156,7 @@ class ViSQOLoss(torch.nn.Module):
         w = self.nsim_win.to(x.dtype)
 
         def loc(v):
+            #v = torch.nn.functional.pad(v, (1, 1, 1, 1), mode="replicate")
             return torch.nn.functional.conv2d(v, w)
 
         mu_x, mu_y = loc(x), loc(y)
@@ -168,9 +166,13 @@ class ViSQOLoss(torch.nn.Module):
         var_y = torch.clamp(loc(y * y) - mu_y2, min=0.0)
         cov = loc(x * y) - mu_xy
 
-        Lb = L.repeat_interleave(P).reshape(-1, 1, 1, 1)
-        C1 = (0.01 * Lb) ** 2
-        C3 = (0.03 * Lb) ** 2
+        #Lb = L.repeat_interleave(P).reshape(-1, 1, 1, 1)
+        #C1 = (0.01 * Lb) ** 2
+        #C3 = (0.03 * Lb) ** 2
+        # the 2015 and 2017 papers were a little shaky on whether they mean C1/C3 or K1/K3
+        # from experiment it seems they actually mean C1/C3
+        C1 = 0.01
+        C3 = 0.03
 
         lum = (2 * mu_xy + C1) / (mu_x2 + mu_y2 + C1)
         stru = (cov + C3) / (torch.sqrt(var_x * var_y + 1e-12) + C3)
